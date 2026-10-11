@@ -14,6 +14,7 @@ podman build -t dapper .
 podman run -d \
   --name dapper \
   --restart=unless-stopped \
+  --env-file .env \
   -p 8000:8000 \
   -e HEARTBEAT_TIMEOUT_SECONDS=90 \
   dapper

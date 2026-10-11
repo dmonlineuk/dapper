@@ -1,22 +1,98 @@
 import os
 import asyncio
+import secrets
+
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
+
+# Configuration
 HEARTBEAT_TIMEOUT = int(
     os.getenv("HEARTBEAT_TIMEOUT_SECONDS", "90")
 )
 
-# Latest known state, keyed by normalized hostname.
+# The API token is loaded at startup, not hard-coded.
+API_TOKEN: str | None = None
+
+# In-memory state, keyed by normalized hostname.
 hosts: dict[str, dict[str, Any]] = {}
 hosts_lock = asyncio.Lock()
 
+# HTTP bearer authentication.
+bearer_scheme = HTTPBearer(auto_error=False)
+
+
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def validate_api_token(token: str | None) -> str:
+    """Validate the configured API token."""
+
+    if not token:
+        raise RuntimeError(
+            "DAPPER_API_TOKEN must be configured."
+        )
+
+    if len(token) < 32:
+        raise RuntimeError(
+            "DAPPER_API_TOKEN must be at least 32 characters."
+        )
+
+    return token
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Validate configuration before accepting requests."""
+
+    global API_TOKEN
+
+    API_TOKEN = validate_api_token(
+        os.getenv("DAPPER_API_TOKEN")
+    )
+
+    yield
+
+    API_TOKEN = None
+
+
+app = FastAPI(
+    title="Dapper API",
+    version="0.2.0",
+    lifespan=lifespan,
+)
+
+
+async def require_authentication(
+    credentials: HTTPAuthorizationCredentials | None = Depends(
+        bearer_scheme
+    ),
+):
+    """Require a valid bearer token."""
+
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if API_TOKEN is None or not secrets.compare_digest(
+        credentials.credentials,
+        API_TOKEN,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
 
 class Telemetry(BaseModel):
     hostname: str = Field(min_length=1, max_length=253)
@@ -25,28 +101,27 @@ class Telemetry(BaseModel):
     uptime_seconds: float | None = Field(default=None, ge=0)
     metrics: dict[str, Any] = Field(default_factory=dict)
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    yield
-    # In-memory state is discarded when the process exits.
-
-app = FastAPI(
-    title="Dapper API",
-    version="0.1.0",
-    lifespan=lifespan,
-)
 
 @app.get("/api/v1/health")
 async def health():
-    return {"status": "ok", "time": utc_now()}
+    # Intentionally public: useful for health checks.
+    return {
+        "status": "ok",
+        "time": utc_now(),
+    }
 
-@app.post("/api/v1/telemetry")
+
+@app.post(
+    "/api/v1/telemetry",
+    dependencies=[Depends(require_authentication)],
+)
 async def receive_telemetry(data: Telemetry):
     hostname = data.hostname.strip().rstrip(".").lower()
 
     if not hostname:
         raise HTTPException(
-            status_code=422, detail="Hostname cannot be empty"
+            status_code=422,
+            detail="Hostname cannot be empty",
         )
 
     now = utc_now()
@@ -64,9 +139,16 @@ async def receive_telemetry(data: Telemetry):
             "last_seen": now,
         }
 
-    return {"accepted": True, "hostname": hostname}
+    return {
+        "accepted": True,
+        "hostname": hostname,
+    }
 
-@app.get("/api/v1/hosts")
+
+@app.get(
+    "/api/v1/hosts",
+    dependencies=[Depends(require_authentication)],
+)
 async def get_hosts():
     now = utc_now()
 
@@ -77,6 +159,7 @@ async def get_hosts():
 
     for host in snapshot:
         age = (now - host["last_seen"]).total_seconds()
+
         results.append({
             **host,
             "status": (
@@ -90,6 +173,7 @@ async def get_hosts():
     return {
         "count": len(results),
         "hosts": sorted(
-            results, key=lambda host: host["hostname"]
+            results,
+            key=lambda host: host["hostname"],
         ),
     }
