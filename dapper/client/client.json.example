@@ -1,0 +1,5 @@
+{
+  "server_url": "http://192.168.1.10:8000",
+  "api_token": "REPLACE_WITH_YOUR_DAPPER_API_TOKEN",
+  "interval_seconds": 30
+}
