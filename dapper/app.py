@@ -9,6 +9,8 @@ from typing import Any
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
+from fastapi.responses import FileResponse
+from pathlib import Path
 
 
 # Configuration
@@ -177,3 +179,10 @@ async def get_hosts():
             key=lambda host: host["hostname"],
         ),
     }
+
+
+@app.get("/", include_in_schema=False)
+async def dashboard():
+    return FileResponse(
+        Path(__file__).parent / "dashboard.html"
+    )

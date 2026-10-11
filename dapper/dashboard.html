@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+
+    <title>Dapper — Network Dashboard</title>
+
+    <style>
+        :root {
+            color-scheme: dark;
+            --background: #0c111b;
+            --panel: #151e2d;
+            --panel-raised: #1b2638;
+            --border: #2b394e;
+            --text: #e6edf7;
+            --muted: #95a5bc;
+            --accent: #70b7ff;
+            --green: #4ade80;
+            --red: #fb7185;
+            --amber: #fbbf24;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: var(--background);
+            color: var(--text);
+            font-family:
+                Inter, system-ui, -apple-system,
+                BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-size: 14px;
+        }
+
+        button, input {
+            font: inherit;
+        }
+
+        header {
+            padding: 28px 32px;
+            border-bottom: 1px solid var(--border);
+            background: var(--panel);
+        }
+
+        .header-inner {
+            max-width: 1600px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
+        }
+
+        .brand {
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: 3px;
+        }
+
+        .subtitle {
+            color: var(--muted);
+            margin-top: 5px;
+        }
+
+        .refresh {
+            color: var(--muted);
+            text-align: right;
+            line-height: 1.8;
+        }
+
+        main {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 28px 32px 48px;
+        }
+
+        .summary {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+
+        .summary-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .summary-label {
+            color: var(--muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .summary-value {
+            font-size: 32px;
+            font-weight: 750;
+            margin-top: 8px;
+        }
+
+        .section-heading {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        h2 {
+            font-size: 18px;
+            margin: 0;
+        }
+
+        .muted {
+            color: var(--muted);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+            gap: 18px;
+        }
+
+        .host {
+            min-width: 0;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .host.offline {
+            border-color: #57303e;
+        }
+
+        .host-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .hostname {
+            font-size: 18px;
+            font-weight: 750;
+            overflow-wrap: anywhere;
+        }
+
+        .platform {
+            color: var(--muted);
+            margin-top: 6px;
+        }
+
+        .status {
+            flex-shrink: 0;
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 6px 9px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 750;
+            letter-spacing: .5px;
+            background: var(--panel-raised);
+        }
+
+        .status::before {
+            content: "";
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .online .status {
+            color: var(--green);
+        }
+
+        .offline .status {
+            color: var(--red);
+        }
+
+        .host-body {
+            padding: 20px;
+        }
+
+        .metric {
+            margin-bottom: 20px;
+        }
+
+        .metric:last-child {
+            margin-bottom: 0;
+        }
+
+        .metric-heading {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 9px;
+        }
+
+        .metric-label {
+            color: var(--muted);
+        }
+
+        .metric-value {
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .bar {
+            height: 7px;
+            background: #263449;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+
+        .bar-fill {
+            height: 100%;
+            width: 0;
+            background: var(--accent);
+            border-radius: inherit;
+            transition: width .3s ease;
+        }
+
+        .bar-fill.high {
+            background: var(--amber);
+        }
+
+        .offline .bar-fill {
+            background: #667085;
+        }
+
+        .host-footer {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 14px 20px;
+            background: rgba(0, 0, 0, .12);
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .empty, .message {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 28px;
+            color: var(--muted);
+            text-align: center;
+        }
+
+        .message.error {
+            color: var(--red);
+        }
+
+        .login {
+            max-width: 420px;
+            margin: 60px auto;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 28px;
+        }
+
+        .login h2 {
+            margin-bottom: 12px;
+        }
+
+        .login p {
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
+        .login label {
+            display: block;
+            margin: 20px 0 8px;
+        }
+
+        .login input {
+            width: 100%;
+            padding: 12px;
+            background: var(--background);
+            border: 1px solid var(--border);
+            border-radius: 7px;
+            color: var(--text);
+        }
+
+        .login button {
+            width: 100%;
+            margin-top: 14px;
+            padding: 12px;
+            border: 0;
+            border-radius: 7px;
+            background: var(--accent);
+            color: #07111e;
+            font-weight: 750;
+            cursor: pointer;
+        }
+
+        .login button:disabled {
+            opacity: .6;
+            cursor: wait;
+        }
+
+        .login .error-text {
+            color: var(--red);
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .small-button {
+            padding: 7px 11px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            background: var(--panel);
+            cursor: pointer;
+        }
+
+        [hidden] {
+            display: none !important;
+        }
+
+        @media (max-width: 640px) {
+            header {
+                padding: 20px;
+            }
+
+            .header-inner {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .refresh {
+                text-align: left;
+            }
+
+            main {
+                padding: 20px 16px 36px;
+            }
+
+            .summary {
+                gap: 8px;
+            }
+
+            .summary-card {
+                padding: 12px;
+            }
+
+            .summary-value {
+                font-size: 25px;
+            }
+
+            .summary-label {
+                font-size: 10px;
+                letter-spacing: .5px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+<header>
+    <div class="header-inner">
+        <div>
+            <div class="brand">DAPPER</div>
+            <div class="subtitle">Home Network Dashboard</div>
+        </div>
+
+        <div class="refresh">
+            <div id="connection-status">Not connected</div>
+            <div id="last-refresh">Waiting for authentication</div>
+        </div>
+    </div>
+</header>
+
+<main>
+    <section id="login-panel" class="login">
+        <h2>Connect to Dapper</h2>
+
+        <p>
+            Enter your Dapper API token to retrieve your
+            network inventory. The token is kept in this
+            browser tab and is not included in the page source.
+        </p>
+
+        <form id="login-form">
+            <label for="api-token">API token</label>
+
+            <input
+                id="api-token"
+                type="password"
+                autocomplete="off"
+                spellcheck="false"
+                required
+                minlength="32"
+                placeholder="Paste your API token"
+            >
+
+            <button id="connect-button" type="submit">
+                Connect
+            </button>
+
+            <p id="login-error" class="error-text" hidden></p>
+        </form>
+    </section>
+
+    <section id="dashboard" hidden>
+        <div class="summary">
+            <div class="summary-card">
+                <div class="summary-label">Discovered clients</div>
+                <div class="summary-value" id="total-count">0</div>
+            </div>
+
+            <div class="summary-card">
+                <div class="summary-label">Online</div>
+                <div class="summary-value" id="online-count">0</div>
+            </div>
+
+            <div class="summary-card">
+                <div class="summary-label">Offline</div>
+                <div class="summary-value" id="offline-count">0</div>
+            </div>
+        </div>
+
+        <div class="section-heading">
+            <h2>Clients</h2>
+
+            <div class="toolbar">
+                <span class="muted" id="refresh-interval">
+                    Refreshes every 10s
+                </span>
+
+                <button class="small-button" id="refresh-button">
+                    Refresh
+                </button>
+
+                <button class="small-button" id="disconnect-button">
+                    Disconnect
+                </button>
+            </div>
+        </div>
+
+        <div id="dashboard-message" hidden></div>
+        <div id="host-grid" class="grid"></div>
+    </section>
+</main>
+
+<script>
+(() => {
+    "use strict";
+
+    const REFRESH_MS = 10_000;
+    const API_URL = "/api/v1/hosts";
+
+    const loginPanel = document.getElementById("login-panel");
+    const dashboard = document.getElementById("dashboard");
+    const loginForm = document.getElementById("login-form");
+    const tokenInput = document.getElementById("api-token");
+    const loginError = document.getElementById("login-error");
+    const connectButton = document.getElementById("connect-button");
+
+    const hostGrid = document.getElementById("host-grid");
+    const dashboardMessage = document.getElementById("dashboard-message");
+    const connectionStatus = document.getElementById("connection-status");
+    const lastRefresh = document.getElementById("last-refresh");
+
+    let token = null;
+    let timer = null;
+    let refreshing = false;
+    let disconnected = false;
+
+    function formatDuration(seconds) {
+        if (!Number.isFinite(seconds) || seconds < 0) {
+            return "Unknown";
+        }
+
+        let remaining = Math.floor(seconds);
+
+        const days = Math.floor(remaining / 86400);
+        remaining %= 86400;
+
+        const hours = Math.floor(remaining / 3600);
+        remaining %= 3600;
+
+        const minutes = Math.floor(remaining / 60);
+
+        if (days > 0) {
+            return `${days}d ${hours}h`;
+        }
+
+        if (hours > 0) {
+            return `${hours}h ${minutes}m`;
+        }
+
+        return `${minutes}m`;
+    }
+
+    function formatAge(seconds) {
+        if (!Number.isFinite(seconds) || seconds < 0) {
+            return "Unknown";
+        }
+
+        if (seconds < 5) {
+            return "Just now";
+        }
+
+        if (seconds < 60) {
+            return `${Math.floor(seconds)}s ago`;
+        }
+
+        if (seconds < 3600) {
+            return `${Math.floor(seconds / 60)}m ago`;
+        }
+
+        if (seconds < 86400) {
+            return `${Math.floor(seconds / 3600)}h ago`;
+        }
+
+        return `${Math.floor(seconds / 86400)}d ago`;
+    }
+
+    function formatPercent(value) {
+        if (
+            typeof value !== "number" ||
+            !Number.isFinite(value) ||
+            value < 0 ||
+            value > 100
+        ) {
+            return "—";
+        }
+
+        return `${value.toFixed(1)}%`;
+    }
+
+    function addText(parent, tag, className, value) {
+        const element = document.createElement(tag);
+
+        if (className) {
+            element.className = className;
+        }
+
+        element.textContent = value;
+        parent.appendChild(element);
+
+        return element;
+    }
+
+    function addMetric(parent, label, value, percentage = null) {
+        const metric = document.createElement("div");
+        metric.className = "metric";
+
+        const heading = document.createElement("div");
+        heading.className = "metric-heading";
+
+        addText(heading, "span", "metric-label", label);
+        addText(heading, "span", "metric-value", value);
+
+        metric.appendChild(heading);
+
+        if (percentage !== null) {
+            const bar = document.createElement("div");
+            bar.className = "bar";
+
+            const fill = document.createElement("div");
+            fill.className = "bar-fill";
+
+            const valid =
+                typeof percentage === "number" &&
+                Number.isFinite(percentage) &&
+                percentage >= 0 &&
+                percentage <= 100;
+
+            fill.style.width = valid ? `${percentage}%` : "0%";
+
+            if (valid && percentage >= 85) {
+                fill.classList.add("high");
+            }
+
+            bar.appendChild(fill);
+            metric.appendChild(bar);
+        }
+
+        parent.appendChild(metric);
+    }
+
+    function createHostCard(host) {
+        const online = host.status === "online";
+
+        const card = document.createElement("article");
+        card.className = `host ${online ? "online" : "offline"}`;
+
+        const header = document.createElement("div");
+        header.className = "host-header";
+
+        const identity = document.createElement("div");
+
+        addText(
+            identity,
+            "div",
+            "hostname",
+            host.hostname || "Unknown host"
+        );
+
+        addText(
+            identity,
+            "div",
+            "platform",
+            `${host.platform || "Unknown OS"} · ${
+                host.architecture || "Unknown architecture"
+            }`
+        );
+
+        addText(
+            header,
+            "span",
+            "status",
+            online ? "ONLINE" : "OFFLINE"
+        );
+
+        // Put the identity before the status.
+        header.insertBefore(identity, header.firstChild);
+        card.appendChild(header);
+
+        const body = document.createElement("div");
+        body.className = "host-body";
+
+        const metrics = host.metrics || {};
+
+        addMetric(
+            body,
+            "CPU utilisation",
+            formatPercent(metrics.cpu_percent),
+            metrics.cpu_percent
+        );
+
+        addMetric(
+            body,
+            "Memory utilisation",
+            formatPercent(metrics.memory_percent),
+            metrics.memory_percent
+        );
+
+        addMetric(
+            body,
+            "System uptime",
+            formatDuration(host.uptime_seconds)
+        );
+
+        if (
+            typeof metrics.memory_total_bytes === "number" &&
+            Number.isFinite(metrics.memory_total_bytes) &&
+            metrics.memory_total_bytes >= 0
+        ) {
+            addMetric(
+                body,
+                "Installed memory",
+                `${(
+                    metrics.memory_total_bytes /
+                    (1024 ** 3)
+                ).toFixed(1)} GiB`
+            );
+        }
+
+        card.appendChild(body);
+
+        const footer = document.createElement("div");
+        footer.className = "host-footer";
+
+        addText(
+            footer,
+            "span",
+            "",
+            `Last seen ${formatAge(host.seconds_since_seen)}`
+        );
+
+        addText(
+            footer,
+            "span",
+            "",
+            online ? "Reporting" : "Telemetry stale"
+        );
+
+        card.appendChild(footer);
+
+        return card;
+    }
+
+    function showMessage(message, error = false) {
+        dashboardMessage.hidden = false;
+        dashboardMessage.className =
+            error ? "message error" : "message";
+
+        dashboardMessage.textContent = message;
+    }
+
+    function hideMessage() {
+        dashboardMessage.hidden = true;
+        dashboardMessage.textContent = "";
+    }
+
+    async function refreshHosts() {
+        if (!token || refreshing || disconnected) {
+            return;
+        }
+
+        refreshing = true;
+
+        try {
+            const response = await fetch(API_URL, {
+                method: "GET",
+                headers: {
+                    "Authorization": `Bearer ${token}`,
+                    "Accept": "application/json"
+                },
+                cache: "no-store"
+            });
+
+            if (response.status === 401) {
+                disconnect("Authentication failed. Enter your token again.");
+                return;
+            }
+
+            if (!response.ok) {
+                throw new Error(`Server returned HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            if (!Array.isArray(data.hosts)) {
+                throw new Error("Unexpected response from Dapper.");
+            }
+
+            const hosts = data.hosts;
+
+            const online = hosts.filter(
+                host => host.status === "online"
+            ).length;
+
+            document.getElementById("total-count").textContent =
+                hosts.length;
+
+            document.getElementById("online-count").textContent =
+                online;
+
+            document.getElementById("offline-count").textContent =
+                hosts.length - online;
+
+            hostGrid.replaceChildren();
+
+            if (hosts.length === 0) {
+                const empty = document.createElement("div");
+                empty.className = "empty";
+                empty.textContent =
+                    "No clients discovered yet. Start a Dapper agent " +
+                    "on a machine to see its telemetry here.";
+
+                hostGrid.appendChild(empty);
+            } else {
+                hosts.forEach(host => {
+                    hostGrid.appendChild(createHostCard(host));
+                });
+            }
+
+            hideMessage();
+
+            connectionStatus.textContent = "Connected";
+            lastRefresh.textContent =
+                `Last refreshed ${new Date().toLocaleTimeString()}`;
+
+        } catch (error) {
+            connectionStatus.textContent = "Connection problem";
+
+            showMessage(
+                `Unable to refresh client data: ${error.message}. ` +
+                "The dashboard will retry automatically.",
+                true
+            );
+
+        } finally {
+            refreshing = false;
+        }
+    }
+
+    function disconnect(message = "Disconnected") {
+        disconnected = true;
+        token = null;
+
+        if (timer !== null) {
+            clearInterval(timer);
+            timer = null;
+        }
+
+        // Clear the input as well as the in-memory credential.
+        tokenInput.value = "";
+
+        loginPanel.hidden = false;
+        dashboard.hidden = true;
+
+        loginError.textContent = message;
+        loginError.hidden = false;
+
+        connectionStatus.textContent = "Not connected";
+        lastRefresh.textContent = "Authentication required";
+    }
+
+    loginForm.addEventListener("submit", async event => {
+        event.preventDefault();
+
+        const enteredToken = tokenInput.value.trim();
+
+        if (enteredToken.length < 32) {
+            loginError.textContent = "The token appears too short.";
+            loginError.hidden = false;
+            return;
+        }
+
+        connectButton.disabled = true;
+        connectButton.textContent = "Connecting...";
+        loginError.hidden = true;
+
+        // Do not persist the token in localStorage or sessionStorage.
+        // Keep it in memory for this page's lifetime only.
+        token = enteredToken;
+        disconnected = false;
+
+        loginPanel.hidden = true;
+        dashboard.hidden = false;
+
+        await refreshHosts();
+
+        connectButton.disabled = false;
+        connectButton.textContent = "Connect";
+
+        if (!disconnected && token) {
+            timer = setInterval(refreshHosts, REFRESH_MS);
+        }
+    });
+
+    document.getElementById("refresh-button")
+        .addEventListener("click", refreshHosts);
+
+    document.getElementById("disconnect-button")
+        .addEventListener("click", () => disconnect());
+
+})();
+</script>
+</body>
+</html>
