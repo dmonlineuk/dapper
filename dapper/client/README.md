@@ -1,24 +1,40 @@
-# dapper client
-Steps to configure the clients in the network.
+# Dapper Client
 
-## Linux
+The Dapper client is a lightweight, cross-platform agent that collects
+system telemetry and reports it to a Dapper server.
 
-### Initial setup
+The agent is written in Python and currently supports:
 
-```bash
-# service folders
-sudo mkdir -p /opt/dapper
-sudo mkdir -p /etc/dapper
+- Linux
+- Windows
+- macOS
 
-sudo cp agent.py /opt/dapper/agent.py
+It collects the hostname, operating system, CPU architecture, uptime,
+CPU utilisation, and memory statistics.
 
-sudo python3 -m venv /opt/dapper/venv
+The agent sends telemetry to the server periodically using an HTTP API
+and a shared bearer token.
 
-sudo /opt/dapper/venv/bin/pip install \
-  -r requirements.txt
-```
+## Requirements
 
-### Configure using `/etc/dapper/client.json`
+- Python 3.12 or later (use a version tested with your dependencies).
+- Network connectivity to a running Dapper server.
+- The shared Dapper API token.
+- Administrator/root privileges for service installation.
+
+The agent requires the following Python packages:
+
+- `psutil`
+- `requests`
+
+Install them using the included `requirements.txt`.
+
+## Configuration
+
+All clients use a JSON configuration file containing the server address,
+API token, and reporting interval.
+
+Example:
 
 ```json
 {
@@ -28,7 +44,135 @@ sudo /opt/dapper/venv/bin/pip install \
 }
 ```
 
-### Service setup using `/etc/systemd/system/dapper-agent.service`
+Configuration properties:
+
+| Property | Description | Default |
+|---|---|---|
+| `server_url` | Base URL of the Dapper server | Required |
+| `api_token` | Shared Dapper API bearer token | Required |
+| `interval_seconds` | Time between telemetry reports, in seconds | `30` |
+
+The reporting interval must be between 5 and 3600 seconds.
+
+The API token must be at least 32 characters long and must match the
+token configured on the Dapper server.
+
+The agent supports the `DAPPER_CONFIG` environment variable to override
+the default configuration file path.
+
+Default configuration paths:
+
+| Operating system | Configuration path |
+|---|---|
+| Linux | `/etc/dapper/client.json` |
+| Windows | `C:\ProgramData\Dapper\client.json` |
+| macOS | `/Library/Application Support/Dapper/client.json` |
+
+Protect the configuration file against unauthorised access. It contains
+the shared API token, which grants access to the Dapper API.
+
+## Linux
+
+The recommended Linux deployment uses systemd to run the agent as a
+system service.
+
+### Initial setup
+
+Run the following commands from the `client` directory of the Dapper
+repository.
+
+Create the installation directories:
+
+```bash
+sudo mkdir -p /opt/dapper
+sudo mkdir -p /etc/dapper
+```
+
+Copy the agent and its requirements:
+
+```bash
+sudo install -m 644 agent.py /opt/dapper/agent.py
+sudo install -m 644 requirements.txt /opt/dapper/requirements.txt
+```
+
+Create a virtual environment and install the dependencies:
+
+```bash
+sudo python3 -m venv /opt/dapper/venv
+
+sudo /opt/dapper/venv/bin/python -m pip install \
+  -r /opt/dapper/requirements.txt
+```
+
+### Create the service account
+
+The agent does not need root privileges to collect the metrics currently
+supported by Dapper.
+
+Create a dedicated service account:
+
+```bash
+sudo useradd \
+  --system \
+  --no-create-home \
+  --shell /usr/sbin/nologin \
+  dapper
+```
+
+If the account already exists, this command can be skipped.
+
+Set ownership and permissions:
+
+```bash
+sudo chown -R root:root /opt/dapper
+sudo chmod -R a+rX /opt/dapper
+
+sudo chown root:dapper /etc/dapper
+sudo chmod 750 /etc/dapper
+```
+
+### Configure the client
+
+Create `/etc/dapper/client.json`:
+
+```bash
+sudo nano /etc/dapper/client.json
+```
+
+Add the configuration described in the Configuration section.
+
+Protect the file:
+
+```bash
+sudo chown root:dapper /etc/dapper/client.json
+sudo chmod 640 /etc/dapper/client.json
+```
+
+The configuration is readable by root and the Dapper service group,
+but not by ordinary users.
+
+### Test the agent
+
+Before installing the service, run the agent manually:
+
+```bash
+sudo -u dapper /opt/dapper/venv/bin/python \
+  /opt/dapper/agent.py
+```
+
+Check that the agent starts and reports telemetry successfully.
+
+Stop it with `Ctrl+C`.
+
+### Configure systemd
+
+Create the service unit:
+
+```bash
+sudo nano /etc/systemd/system/dapper-agent.service
+```
+
+Add the following:
 
 ```ini
 [Unit]
@@ -39,13 +183,13 @@ Wants=network-online.target
 [Service]
 Type=simple
 
+User=dapper
+Group=dapper
+
 ExecStart=/opt/dapper/venv/bin/python /opt/dapper/agent.py
 
 Restart=on-failure
 RestartSec=10
-
-User=root
-Group=root
 
 NoNewPrivileges=true
 PrivateTmp=true
@@ -56,48 +200,168 @@ ProtectHome=true
 WantedBy=multi-user.target
 ```
 
-### Start service and check status
+### Start the service
+
+Reload systemd and enable the service:
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now dapper-agent
+```
 
+Check its status:
+
+```bash
 sudo systemctl status dapper-agent
+```
+
+Follow the logs:
+
+```bash
 sudo journalctl -u dapper-agent -f
+```
+
+### Restart or stop the service
+
+Restart:
+
+```bash
+sudo systemctl restart dapper-agent
+```
+
+Stop:
+
+```bash
+sudo systemctl stop dapper-agent
+```
+
+Start:
+
+```bash
+sudo systemctl start dapper-agent
 ```
 
 ## Windows
 
-### Pre-requisites:
+The recommended Windows deployment uses Python and the WinSW service
+wrapper to run the agent as a Windows service.
 
-Install python e.g. `winget install python.python.3.14`
-Download WinSW-x64.exe from https://github.com/winsw/winsw/releases/#release-v2.12.0
+### Prerequisites
 
-### Initial setup - use an elevated terminal
+Install Python using winget, if it is not already installed:
 
-```pwsh
-# service folders
-mkdir 'C:\Program Files\Dapper'
-mkdir C:\ProgramData\Dapper
-
-cp agent.py 'C:\Program Files\Dapper\agent.py'
-cp 'C:\Users\<user>\Downloads\WinSW-x64.exe' 'C:\Program Files\Dapper\DapperAgent.exe'
-
-python -m venv 'C:\Program Files\Dapper\venv'
-'C:\Program Files\Dapper\Scripts\pip.exe' install -r requirements.txt
+```powershell
+winget install --id Python.Python.3.13 -e
 ```
 
-### Configure using `C:\ProgramData\Dapper\client.json`
+Confirm that Python is available:
 
-```json
-{
-  "server_url": "http://<servername-or-ip>:8000",
-  "api_token": "REPLACE_WITH_YOUR_DAPPER_API_TOKEN",
-  "interval_seconds": 30
-}
+```powershell
+py -3.13 --version
 ```
 
-### Service setup using `C:\Program Files\Dapper\DapperAgent.xml`
+Download the appropriate WinSW executable from the
+[WinSW releases page](https://github.com/winsw/winsw/releases).
+
+This guide uses the WinSW v2.12.0 release and assumes a 64-bit Windows
+installation. Download `WinSW-x64.exe` and rename it to `DapperAgent.exe`.
+
+### Initial setup
+
+Open an elevated PowerShell terminal.
+
+Run these commands from the Dapper `client` directory.
+
+Create the installation directories:
+
+```powershell
+New-Item -ItemType Directory -Force `
+  -Path 'C:\Program Files\Dapper'
+
+New-Item -ItemType Directory -Force `
+  -Path 'C:\ProgramData\Dapper'
+```
+
+Copy the agent and requirements:
+
+```powershell
+Copy-Item .\agent.py `
+  'C:\Program Files\Dapper\agent.py'
+
+Copy-Item .\requirements.txt `
+  'C:\Program Files\Dapper\requirements.txt'
+```
+
+Copy the downloaded WinSW executable, adjusting the source path
+if necessary:
+
+```powershell
+Copy-Item `
+  "$env:USERPROFILE\Downloads\WinSW-x64.exe" `
+  'C:\Program Files\Dapper\DapperAgent.exe'
+```
+
+Create the virtual environment:
+
+```powershell
+py -3.13 -m venv `
+  'C:\Program Files\Dapper\venv'
+```
+
+Install the dependencies:
+
+```powershell
+& 'C:\Program Files\Dapper\venv\Scripts\python.exe' `
+  -m pip install `
+  -r 'C:\Program Files\Dapper\requirements.txt'
+```
+
+### Configure the client
+
+Create the configuration file:
+
+```powershell
+notepad 'C:\ProgramData\Dapper\client.json'
+```
+
+Add the configuration described in the Configuration section.
+
+Restrict access to the configuration file:
+
+```powershell
+icacls 'C:\ProgramData\Dapper' /inheritance:r `
+  /grant:r '*S-1-5-18:(OI)(CI)F' `
+  '*S-1-5-32-544:(OI)(CI)F'
+```
+
+These security identifiers represent SYSTEM and the local
+Administrators group, respectively.
+
+Ensure the service runs under an account that can read the
+configuration file.
+
+### Test the agent
+
+Run the agent manually before installing the service:
+
+```powershell
+& 'C:\Program Files\Dapper\venv\Scripts\python.exe' `
+  'C:\Program Files\Dapper\agent.py'
+```
+
+Check that the agent starts and reports telemetry successfully.
+
+Stop it with `Ctrl+C`.
+
+### Configure WinSW
+
+Create the file:
+
+`C:\Program Files\Dapper\DapperAgent.xml`
+
+The XML filename must match the executable basename.
+
+Add:
 
 ```xml
 <service>
@@ -114,42 +378,155 @@ python -m venv 'C:\Program Files\Dapper\venv'
 </service>
 ```
 
-### Start service and check status
+The service uses the Python interpreter in the virtual environment.
 
-```pwsh
-'C:\Program Files\Dapper\DapperAgent.exe' install
-'C:\Program Files\Dapper\DapperAgent.exe' start
+The default WinSW service identity is LocalSystem. Keep the configuration
+file restricted to SYSTEM and Administrators, as above.
+
+### Install and start the service
+
+Run these commands from an elevated PowerShell terminal:
+
+```powershell
+& 'C:\Program Files\Dapper\DapperAgent.exe' install
+
+& 'C:\Program Files\Dapper\DapperAgent.exe' start
 ```
 
-## MacOS
+Check the service status:
 
-### Pre-requisites:
+```powershell
+Get-Service DapperAgent
+```
 
-Install python e.g. `brew install python@3.14`
+WinSW writes service logs alongside its executable by default, subject
+to its logging configuration. Check these logs if the service fails to
+start or the agent cannot connect to Dapper.
+
+### Restart or stop the service
+
+Restart:
+
+```powershell
+Restart-Service DapperAgent
+```
+
+Stop:
+
+```powershell
+Stop-Service DapperAgent
+```
+
+Start:
+
+```powershell
+Start-Service DapperAgent
+```
+
+If you modify the WinSW XML configuration, consult the documentation
+for your installed WinSW version to determine whether the service needs
+to be reinstalled.
+
+## macOS
+
+The recommended macOS deployment uses a Python virtual environment
+and a system-level launchd LaunchDaemon.
+
+A LaunchDaemon starts independently of an interactive user session.
+
+### Prerequisites
+
+Install Python using Homebrew, if it is not already installed:
+
+```zsh
+brew install python@3.13
+```
+
+Verify the installation:
+
+```zsh
+python3.13 --version
+```
 
 ### Initial setup
 
+Run the following commands from the Dapper `client` directory.
+
+Create the installation directory:
+
 ```zsh
-sudo mkdir -p /Library/Application\ Support/Dapper
-
-sudo cp agent.py /Library/Application\ Support/Dapper
-
-sudo python3.14 -m venv /Library/Application\ Support/Dapper/venv
-
-sudo /Library/Application\ Support/Dapper/venv/bin/pip install -r requirements
+sudo mkdir -p "/Library/Application Support/Dapper"
 ```
 
-### Configure using `/Library/Application\ Support/Dapper/client.json`
+Copy the agent and requirements:
 
-```json
-{
-  "server_url": "http://<servername-or-ip>:8000",
-  "api_token": "REPLACE_WITH_YOUR_DAPPER_API_TOKEN",
-  "interval_seconds": 30
-}
+```zsh
+sudo install -m 644 agent.py \
+  "/Library/Application Support/Dapper/agent.py"
+
+sudo install -m 644 requirements.txt \
+  "/Library/Application Support/Dapper/requirements.txt"
 ```
 
-### Service setup using `/Library/LaunchDaemons/com.dapper.agent.plist`
+Create the virtual environment:
+
+```zsh
+sudo python3.13 -m venv \
+  "/Library/Application Support/Dapper/venv"
+```
+
+Install the dependencies:
+
+```zsh
+sudo "/Library/Application Support/Dapper/venv/bin/python" \
+  -m pip install \
+  -r "/Library/Application Support/Dapper/requirements.txt"
+```
+
+### Configure the client
+
+Create the configuration file:
+
+```zsh
+sudo nano "/Library/Application Support/Dapper/client.json"
+```
+
+Add the configuration described in the Configuration section.
+
+Protect the configuration file:
+
+```zsh
+sudo chown root:wheel \
+  "/Library/Application Support/Dapper/client.json"
+
+sudo chmod 600 \
+  "/Library/Application Support/Dapper/client.json"
+```
+
+The LaunchDaemon runs as root and can read this file.
+
+### Test the agent
+
+Run the agent manually:
+
+```zsh
+sudo "/Library/Application Support/Dapper/venv/bin/python" \
+  "/Library/Application Support/Dapper/agent.py"
+```
+
+Check that the agent starts and reports telemetry successfully.
+
+Stop it with `Ctrl+C`.
+
+### Configure launchd
+
+Create the LaunchDaemon plist:
+
+```zsh
+sudo nano /Library/LaunchDaemons/com.dapper.agent.plist
+```
+
+Add the following:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -183,7 +560,7 @@ sudo /Library/Application\ Support/Dapper/venv/bin/pip install -r requirements
 </plist>
 ```
 
-### Start service and check status
+Set ownership and permissions:
 
 ```zsh
 sudo chown root:wheel \
@@ -191,12 +568,188 @@ sudo chown root:wheel \
 
 sudo chmod 644 \
   /Library/LaunchDaemons/com.dapper.agent.plist
+```
 
+Validate the plist:
+
+```zsh
+plutil -lint /Library/LaunchDaemons/com.dapper.agent.plist
+```
+
+### Load and start the service
+
+Load the LaunchDaemon:
+
+```zsh
 sudo launchctl bootstrap system \
   /Library/LaunchDaemons/com.dapper.agent.plist
+```
 
+Check its status:
+
+```zsh
 sudo launchctl print system/com.dapper.agent
 ```
 
-Examples for `client.json`, `dapper-agent.service`, `DapperAgent.xml` and 
-`com.dapper.agent.plist` can be found in this folder.
+### Restart or stop the service
+
+Restart:
+
+```zsh
+sudo launchctl kickstart -k system/com.dapper.agent
+```
+
+Stop the service:
+
+```zsh
+sudo launchctl bootout system/com.dapper.agent
+```
+
+Start it again after stopping:
+
+```zsh
+sudo launchctl bootstrap system \
+  /Library/LaunchDaemons/com.dapper.agent.plist
+```
+
+If you change only `client.json`, restarting the agent is sufficient.
+
+If you modify the plist itself, unload and reload the service so that
+launchd applies the updated configuration.
+
+### View logs
+
+Follow standard output:
+
+```zsh
+tail -f /var/log/dapper-agent.log
+```
+
+Follow standard error:
+
+```zsh
+tail -f /var/log/dapper-agent-error.log
+```
+
+## Troubleshooting
+
+### The agent cannot connect to Dapper
+
+Check the configured `server_url` and confirm that the client can reach
+the server.
+
+From a client machine, test the health endpoint:
+
+```text
+http://<servername-or-ip>:8000/api/v1/health
+```
+
+The endpoint should return a JSON response indicating that the server
+is healthy.
+
+If the connection fails, check the server address, firewall rules,
+network routing, and Podman port publishing.
+
+### Authentication fails
+
+Confirm that the `api_token` in `client.json` matches the token
+configured on the Dapper server.
+
+The token must be at least 32 characters long.
+
+Do not include the token in support requests or logs.
+
+### The agent runs manually but not as a service
+
+Check that:
+
+- The service points to the correct Python interpreter.
+- The virtual environment contains the required dependencies.
+- The service can read `client.json`.
+- The service has permission to execute the agent.
+- The configured server URL is reachable from the service.
+- The service logs do not contain configuration or authentication errors.
+
+Remember that an interactive shell and a background service can have
+different environment variables and permissions.
+
+### The client does not appear in the dashboard
+
+Confirm that the agent is running and that telemetry is being accepted
+by the server.
+
+The dashboard retrieves discovered clients from the Dapper API.
+A client will appear after its first successful telemetry report.
+
+### The client appears offline
+
+The server marks clients offline when their last successful report
+exceeds the configured heartbeat timeout.
+
+Check the client logs, network connectivity, and server availability.
+
+## Security considerations
+
+Dapper currently uses a shared bearer token.
+
+Every client configured with this token can submit telemetry to the
+server. Protect the token and configuration file accordingly.
+
+The example configuration uses HTTP for simplicity. HTTP does not
+encrypt the token or telemetry in transit.
+
+Do not expose the API directly to the public internet. For networks
+where traffic may be intercepted, configure HTTPS before deploying
+the agent across untrusted network segments.
+
+The current agent does not provide individual client credentials or
+cryptographic client identities.
+
+## Development
+
+The client source code and its requirements are located in this
+directory.
+
+To run the agent manually during development:
+
+```bash
+python -m venv .venv
+```
+
+Activate the virtual environment and install the dependencies:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Configure a `client.json` file and point the agent to it using the
+`DAPPER_CONFIG` environment variable.
+
+For example, on Linux or macOS:
+
+```bash
+export DAPPER_CONFIG="$PWD/client.json"
+python agent.py
+```
+
+In PowerShell:
+
+```powershell
+$env:DAPPER_CONFIG = "$PWD\client.json"
+python .\agent.py
+```
+
+Do not commit real API tokens or configuration files containing secrets
+to source control.
+
+## Example service configurations
+
+Example configuration files for the supported platforms are provided
+in this directory:
+
+- `dapper-agent.service` — Linux systemd service
+- `DapperAgent.xml` — Windows WinSW service
+- `com.dapper.agent.plist` — macOS launchd LaunchDaemon
+
+Use the examples as a starting point and adjust installation paths
+where necessary.
