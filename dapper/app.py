@@ -98,6 +98,7 @@ class Telemetry(BaseModel):
     architecture: str = Field(min_length=1, max_length=64)
     uptime_seconds: float | None = Field(default=None, ge=0)
     metrics: dict[str, Any] = Field(default_factory=dict)
+    network: dict[str, Any] = Field(default_factory=dict)
 
 @app.get("/api/v1/health")
 async def health():
@@ -133,6 +134,7 @@ async def receive_telemetry(data: Telemetry):
             "architecture": data.architecture,
             "uptime_seconds": data.uptime_seconds,
             "metrics": data.metrics,
+            "network": data.network,
             "first_seen": previous.get("first_seen", now),
             "last_seen": now,
         }

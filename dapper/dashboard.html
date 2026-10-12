@@ -194,6 +194,58 @@
             padding: 20px;
         }
 
+        .network-section {
+            padding: 0 20px 20px;
+        }
+
+        .network-heading {
+            font-size: 12px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: 4px 0 12px;
+        }
+
+        .interface-card {
+            border: 1px solid var(--border);
+            background: var(--panel-raised);
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 10px;
+            min-width: 0;
+        }
+
+        .interface-title {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 8px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .interface-type {
+            color: var(--muted);
+            font-weight: 400;
+        }
+
+        .interface-detail {
+            display: grid;
+            grid-template-columns: 90px minmax(0, 1fr);
+            gap: 6px 10px;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .interface-detail-label {
+            color: var(--muted);
+        }
+
+        .interface-detail-value {
+            overflow-wrap: anywhere;
+            font-variant-numeric: tabular-nums;
+        }
+
         .metric {
             margin-bottom: 20px;
         }
@@ -600,6 +652,191 @@
         parent.appendChild(metric);
     }
 
+    function formatBytes(value) {
+        if (
+            typeof value !== "number" ||
+            !Number.isFinite(value) ||
+            value < 0
+        ) {
+            return "Unavailable";
+        }
+
+        const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+        let amount = value;
+        let unit = 0;
+
+        while (amount >= 1024 && unit < units.length - 1) {
+            amount /= 1024;
+            unit++;
+        }
+
+        return `${amount.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+    }
+
+    function formatLinkSpeed(value) {
+        if (
+            typeof value !== "number" ||
+            !Number.isFinite(value) ||
+            value <= 0
+        ) {
+            return "Unavailable";
+        }
+
+        if (value >= 1000) {
+            return `${(value / 1000).toFixed(
+                value % 1000 === 0 ? 0 : 1
+            )} Gbps`;
+        }
+
+        return `${value} Mbps`;
+    }
+
+    function addInterfaceDetail(parent, label, value) {
+        addText(parent, "div", "interface-detail-label", label);
+        addText(
+            parent,
+            "div",
+            "interface-detail-value",
+            value === null || value === undefined || value === ""
+                ? "Unavailable"
+                : String(value)
+        );
+    }
+
+    function addNetworkSection(card, network) {
+        const interfaces = Array.isArray(network?.interfaces)
+            ? network.interfaces
+            : [];
+
+        if (interfaces.length === 0) {
+            return;
+        }
+
+        const section = document.createElement("section");
+        section.className = "network-section";
+
+        addText(
+            section,
+            "div",
+            "network-heading",
+            `Network interfaces (${interfaces.length})`
+        );
+
+        for (const iface of interfaces) {
+            const panel = document.createElement("div");
+            panel.className = "interface-card";
+
+            const title = document.createElement("div");
+            title.className = "interface-title";
+
+            addText(
+                title,
+                "span",
+                "",
+                iface.name || "Unknown interface"
+            );
+
+            const state = iface.is_up === true
+                ? "Up"
+                : iface.is_up === false
+                    ? "Down"
+                    : "State unknown";
+
+            addText(
+                title,
+                "span",
+                "interface-type",
+                `${iface.type || "unknown"} · ${state}`
+            );
+
+            panel.appendChild(title);
+
+            const details = document.createElement("div");
+            details.className = "interface-detail";
+
+            addInterfaceDetail(
+                details,
+                "Link speed",
+                formatLinkSpeed(iface.link_speed_mbps)
+            );
+
+            addInterfaceDetail(
+                details,
+                "IPv4",
+                Array.isArray(iface.ipv4_addresses)
+                    ? iface.ipv4_addresses.join(", ")
+                    : null
+            );
+
+            addInterfaceDetail(
+                details,
+                "IPv6",
+                Array.isArray(iface.ipv6_addresses)
+                    ? iface.ipv6_addresses.join(", ")
+                    : null
+            );
+
+            addInterfaceDetail(
+                details,
+                "MAC address",
+                iface.mac_address
+            );
+
+            addInterfaceDetail(
+                details,
+                "MTU",
+                iface.mtu
+            );
+
+            addInterfaceDetail(
+                details,
+                "Duplex",
+                iface.duplex
+            );
+
+            addInterfaceDetail(
+                details,
+                "Received",
+                formatBytes(iface.bytes_received)
+            );
+
+            addInterfaceDetail(
+                details,
+                "Sent",
+                formatBytes(iface.bytes_sent)
+            );
+
+            addInterfaceDetail(
+                details,
+                "Packets in",
+                iface.packets_received
+            );
+
+            addInterfaceDetail(
+                details,
+                "Packets out",
+                iface.packets_sent
+            );
+
+            addInterfaceDetail(
+                details,
+                "Errors in / out",
+                `${iface.errors_in ?? "—"} / ${iface.errors_out ?? "—"}`
+            );
+
+            addInterfaceDetail(
+                details,
+                "Drops in / out",
+                `${iface.drops_in ?? "—"} / ${iface.drops_out ?? "—"}`
+            );
+
+            panel.appendChild(details);
+            section.appendChild(panel);
+        }
+
+        card.appendChild(section);
+    }
+
     function createHostCard(host) {
         const online = host.status === "online";
 
@@ -684,6 +921,8 @@
         }
 
         card.appendChild(body);
+
+        addNetworkSection(card, host.network);
 
         const footer = document.createElement("div");
         footer.className = "host-footer";

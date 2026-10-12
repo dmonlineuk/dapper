@@ -17,6 +17,11 @@ from uuid import UUID, uuid4
 import psutil
 import requests
 
+import re
+import subprocess
+
+from functools import lru_cache
+
 VERSION = "0.2.0"
 DEFAULT_INTERVAL = 30
 REQUEST_TIMEOUT = 10
@@ -170,8 +175,207 @@ def load_config() -> dict:
         "interval_seconds": interval,
     }
 
+@lru_cache(maxsize=1)
+def macos_hardware_port_types() -> dict[str, str]:
+    """Map macOS interface names to best-effort connection types."""
+
+    if sys.platform != "darwin":
+        return {}
+
+    try:
+        result = subprocess.run(
+            ["networksetup", "-listallhardwareports"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return {}
+
+    if result.returncode != 0:
+        return {}
+
+    mappings = {}
+
+    for block in re.split(r"\n\s*\n", result.stdout.strip()):
+        port_match = re.search(
+            r"^Hardware Port:\s*(.+)$",
+            block,
+            re.MULTILINE,
+        )
+        device_match = re.search(
+            r"^Device:\s*(.+)$",
+            block,
+            re.MULTILINE,
+        )
+
+        if not port_match or not device_match:
+            continue
+
+        port = port_match.group(1).strip().lower()
+        device = device_match.group(1).strip()
+
+        if any(word in port for word in ("wi-fi", "wifi", "airport", "wireless")):
+            mappings[device] = "wifi"
+        elif "ethernet" in port:
+            mappings[device] = "ethernet"
+
+    return mappings
+
+
+def classify_interface(name: str) -> str:
+    """Classify an interface using its name and available OS metadata."""
+
+    lower_name = name.lower()
+
+    if lower_name in ("lo", "lo0", "loopback"):
+        return "loopback"
+
+    if any(
+        marker in lower_name
+        for marker in ("vpn", "tun", "tap", "utun", "wireguard", "wg")
+    ):
+        return "vpn"
+
+    if any(
+        marker in lower_name
+        for marker in (
+            "docker", "veth", "virbr", "vmnet",
+            "vbox", "br-", "bridge",
+        )
+    ):
+        return "virtual"
+
+    # Common wireless interface names.
+    if any(
+        marker in lower_name
+        for marker in ("wifi", "wi-fi", "wlan", "wireless", "airport")
+    ):
+        return "wifi"
+
+    # Common Ethernet interface names.
+    if lower_name.startswith(("eth", "enp", "eno", "ens", "enx")):
+        return "ethernet"
+
+    # macOS commonly uses en0, en1, etc. Consult the hardware-port
+    # mapping rather than assuming every "en" interface is Ethernet.
+    if sys.platform == "darwin":
+        return macos_hardware_port_types().get(name, "unknown")
+
+    # Linux exposes wireless interfaces through sysfs.
+    if sys.platform.startswith("linux"):
+        interface_path = Path("/sys/class/net") / name
+
+        if (interface_path / "wireless").exists():
+            return "wifi"
+
+        if (interface_path / "device").exists():
+            return "ethernet"
+
+    # Avoid guessing when the available information is insufficient.
+    return "unknown"
+
+
+def collect_network_telemetry() -> dict:
+    """Collect best-effort network details for each interface."""
+
+    try:
+        addresses_by_interface = psutil.net_if_addrs()
+        stats_by_interface = psutil.net_if_stats()
+        counters_by_interface = psutil.net_io_counters(pernic=True)
+    except (OSError, psutil.Error):
+        logger.warning("Unable to collect network interface telemetry.")
+        return {"interfaces": []}
+
+    interfaces = []
+
+    link_families = {
+        family
+        for family in (
+            getattr(psutil, "AF_LINK", None),
+            getattr(socket, "AF_PACKET", None),
+        )
+        if family is not None
+    }
+
+    names = sorted(
+        set(addresses_by_interface)
+        | set(stats_by_interface)
+        | set(counters_by_interface)
+    )
+
+    for name in names:
+        addresses = addresses_by_interface.get(name, [])
+        stats = stats_by_interface.get(name)
+        counters = counters_by_interface.get(name)
+
+        ipv4_addresses = []
+        ipv6_addresses = []
+        mac_address = None
+
+        for address in addresses:
+            value = address.address
+
+            if not value:
+                continue
+
+            if address.family == socket.AF_INET:
+                ipv4_addresses.append(value)
+
+            elif address.family == socket.AF_INET6:
+                # Keep any IPv6 scope identifier supplied by the OS.
+                ipv6_addresses.append(value)
+
+            elif address.family in link_families:
+                # Ignore empty and all-zero link-layer addresses.
+                candidate = value.strip()
+
+                if candidate and any(
+                    character in candidate for character in (":", "-")
+                ):
+                    compact = candidate.replace(":", "").replace("-", "")
+
+                    if compact and any(
+                        character != "0" for character in compact
+                    ):
+                        mac_address = candidate.upper()
+
+        speed = stats.speed if stats else 0
+
+        duplex = None
+        if stats:
+            if stats.duplex == psutil.NIC_DUPLEX_FULL:
+                duplex = "full"
+            elif stats.duplex == psutil.NIC_DUPLEX_HALF:
+                duplex = "half"
+
+        interface = {
+            "name": name,
+            "type": classify_interface(name),
+            "is_up": stats.isup if stats else None,
+            "mac_address": mac_address,
+            "ipv4_addresses": sorted(set(ipv4_addresses)),
+            "ipv6_addresses": sorted(set(ipv6_addresses)),
+            "link_speed_mbps": speed if speed and speed > 0 else None,
+            "mtu": stats.mtu if stats and stats.mtu > 0 else None,
+            "duplex": duplex,
+            "bytes_sent": counters.bytes_sent if counters else None,
+            "bytes_received": counters.bytes_recv if counters else None,
+            "packets_sent": counters.packets_sent if counters else None,
+            "packets_received": counters.packets_recv if counters else None,
+            "errors_in": counters.errin if counters else None,
+            "errors_out": counters.errout if counters else None,
+            "drops_in": counters.dropin if counters else None,
+            "drops_out": counters.dropout if counters else None,
+        }
+
+        interfaces.append(interface)
+
+    return {"interfaces": interfaces}
+
 def collect_telemetry(client_id: str) -> dict:
-    """Collect a small set of cross-platform system metrics."""
+    """Collect system metrics and per-interface network telemetry."""
 
     memory = psutil.virtual_memory()
 
@@ -190,6 +394,7 @@ def collect_telemetry(client_id: str) -> dict:
             "memory_total_bytes": memory.total,
             "memory_available_bytes": memory.available,
         },
+        "network": collect_network_telemetry(),
     }
 
 def send_telemetry(
