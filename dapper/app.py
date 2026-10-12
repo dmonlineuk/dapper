@@ -1,17 +1,18 @@
+
 import os
 import asyncio
 import secrets
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
-from fastapi.responses import FileResponse
-from pathlib import Path
-
 
 # Configuration
 HEARTBEAT_TIMEOUT = int(
@@ -21,17 +22,15 @@ HEARTBEAT_TIMEOUT = int(
 # The API token is loaded at startup, not hard-coded.
 API_TOKEN: str | None = None
 
-# In-memory state, keyed by normalized hostname.
+# In-memory state, keyed by persistent client UUID.
 hosts: dict[str, dict[str, Any]] = {}
 hosts_lock = asyncio.Lock()
 
 # HTTP bearer authentication.
 bearer_scheme = HTTPBearer(auto_error=False)
 
-
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
-
 
 def validate_api_token(token: str | None) -> str:
     """Validate the configured API token."""
@@ -48,7 +47,6 @@ def validate_api_token(token: str | None) -> str:
 
     return token
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Validate configuration before accepting requests."""
@@ -63,13 +61,11 @@ async def lifespan(app: FastAPI):
 
     API_TOKEN = None
 
-
 app = FastAPI(
     title="Dapper API",
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan,
 )
-
 
 async def require_authentication(
     credentials: HTTPAuthorizationCredentials | None = Depends(
@@ -95,14 +91,13 @@ async def require_authentication(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-
 class Telemetry(BaseModel):
+    client_id: UUID
     hostname: str = Field(min_length=1, max_length=253)
     platform: str = Field(min_length=1, max_length=64)
     architecture: str = Field(min_length=1, max_length=64)
     uptime_seconds: float | None = Field(default=None, ge=0)
     metrics: dict[str, Any] = Field(default_factory=dict)
-
 
 @app.get("/api/v1/health")
 async def health():
@@ -112,12 +107,12 @@ async def health():
         "time": utc_now(),
     }
 
-
 @app.post(
     "/api/v1/telemetry",
     dependencies=[Depends(require_authentication)],
 )
 async def receive_telemetry(data: Telemetry):
+    client_id = str(data.client_id)
     hostname = data.hostname.strip().rstrip(".").lower()
 
     if not hostname:
@@ -129,9 +124,10 @@ async def receive_telemetry(data: Telemetry):
     now = utc_now()
 
     async with hosts_lock:
-        previous = hosts.get(hostname, {})
+        previous = hosts.get(client_id, {})
 
-        hosts[hostname] = {
+        hosts[client_id] = {
+            "client_id": client_id,
             "hostname": hostname,
             "platform": data.platform,
             "architecture": data.architecture,
@@ -143,9 +139,9 @@ async def receive_telemetry(data: Telemetry):
 
     return {
         "accepted": True,
+        "client_id": client_id,
         "hostname": hostname,
     }
-
 
 @app.get(
     "/api/v1/hosts",
@@ -179,7 +175,6 @@ async def get_hosts():
             key=lambda host: host["hostname"],
         ),
     }
-
 
 @app.get("/", include_in_schema=False)
 async def dashboard():

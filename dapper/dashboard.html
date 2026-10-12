@@ -606,6 +606,11 @@
         const card = document.createElement("article");
         card.className = `host ${online ? "online" : "offline"}`;
 
+        const clientId =
+            typeof host.client_id === "string" ? host.client_id : "";
+
+        card.dataset.clientId = clientId;
+
         const header = document.createElement("div");
         header.className = "host-header";
 
@@ -690,12 +695,16 @@
             `Last seen ${formatAge(host.seconds_since_seen)}`
         );
 
-        addText(
+        const idLabel = addText(
             footer,
             "span",
             "",
-            online ? "Reporting" : "Telemetry stale"
+            `ID ${clientId ? clientId.slice(0, 8) : "Unavailable"}`
         );
+
+        if (clientId) {
+            idLabel.title = clientId;
+        }
 
         card.appendChild(footer);
 
