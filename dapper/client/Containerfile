@@ -1,0 +1,20 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DAPPER_CONFIG=/etc/dapper/client.json
+
+WORKDIR /opt/dapper
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY agent.py .
+
+RUN mkdir -p /etc/dapper \
+    && useradd --system --no-create-home --shell /usr/sbin/nologin dapper \
+    && chown -R dapper:dapper /opt/dapper /etc/dapper
+
+USER dapper
+
+CMD ["python", "/opt/dapper/agent.py"]

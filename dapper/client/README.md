@@ -52,7 +52,7 @@ Configuration properties:
 | `api_token` | Shared Dapper API bearer token | Required |
 | `interval_seconds` | Time between telemetry reports, in seconds | `30` |
 
-The reporting interval must be between 5 and 3600 seconds.
+The reporting interval must be between 1 and 3600 seconds.
 
 The API token must be at least 32 characters long and must match the
 token configured on the Dapper server.
@@ -345,6 +345,63 @@ You can test the Dapper command immediately using the background-start command a
 - Verify that the agent can read /etc/dapper/client.json.
 - Confirm that the configured server URL is reachable from IPFire.
 - If the agent works manually but not after boot, verify that your IPFire version invokes /etc/sysconfig/rc.local and inspect startup logs.
+
+## Container deployment (Podman or Docker)
+
+The Dapper client can run in a container on Linux hosts, including Unraid. This is useful for hosts where installing Python directly is undesirable or unsupported.
+
+The container runs the existing Dapper agent. It does not require a separate agent implementation.
+
+### Requirements
+
+- Podman or Docker.
+- A Dapper server reachable from the container.
+- A valid client.json configuration file.
+- Host networking and hostname visibility configured as appropriate for your container runtime.
+
+### Configuration
+
+Keep the configuration outside the container so that it survives image updates and container recreation. For example, on Unraid:
+
+```text
+/mnt/user/appdata/dapper-agent/client.json
+```
+
+The configuration contains the server URL, API token, reporting interval and persistent client ID. Protect this file because it contains an authentication token.
+
+
+### Running with Podman on Linux
+
+After building or pulling the image, run:
+
+```bash
+podman run -d \
+  --name dapper-agent \
+  --restart unless-stopped \
+  --network host \
+  --uts host \
+  -v /mnt/user/appdata/dapper-agent:/etc/dapper:ro \
+  ghcr.io/dmonlineuk/dapper-agent:0.1.0
+```
+
+Adjust the configuration path if necessary. The `--uts host` option requests the host's hostname namespace; support depends on the runtime and environment.
+
+Important: Host networking and the host UTS namespace have worked in your development-machine test, but don't assume every Docker or Unraid configuration behaves identically. Confirm the reported hostname, uptime, CPU, memory and interfaces after deployment.
+
+To inspect the agent:
+
+```bash
+podman logs -f dapper-agent
+```
+
+To stop or restart it:
+
+```bash
+podman stop dapper-agent
+podman start dapper-agent
+```
+
+For updates, pull the new image and recreate the container while retaining the configuration directory. Keep the same `client_id` so the host retains its existing identity in Dapper.
 
 ## Windows
 
