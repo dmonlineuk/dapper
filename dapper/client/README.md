@@ -241,6 +241,111 @@ Start:
 sudo systemctl start dapper-agent
 ```
 
+## IPFire (without systemd)
+
+This section describes a deployment for IPFire systems that do not use systemd. It uses a Python virtual environment and, if supported by the installed IPFire version, /etc/sysconfig/rc.local for startup.
+Important: Confirm that your IPFire version executes /etc/sysconfig/rc.local during startup before relying on it. Do not replace an existing file or remove its existing commands. You can install and test Dapper without rebooting IPFire.
+
+### Initial setup
+
+Run as root or through a root shell. Confirm Python and virtual-environment support:
+
+```bash
+python3 --version
+python3 -m venv --help
+Create the application and configuration directories:
+mkdir -p /opt/dapper
+mkdir -p /etc/dapper
+From the Dapper client source directory, copy the agent and requirements:
+install -m 644 agent.py /opt/dapper/agent.py
+install -m 644 requirements.txt /opt/dapper/requirements.txt
+Create the virtual environment and install the dependencies:
+python3 -m venv /opt/dapper/venv
+
+/opt/dapper/venv/bin/python -m pip install \
+  -r /opt/dapper/requirements.txt
+```
+
+### Configure the client
+
+Create /etc/dapper/client.json:
+
+```bash
+vim /etc/dapper/client.json
+Use the configuration format described in the Configuration section. Set server_url, api_token, and interval_seconds for this node. Restrict access to the file because it contains the shared API token:
+chmod 600 /etc/dapper/client.json
+```
+
+The agent must run as a user that can read this file. Running it as root allows it to read a file with these permissions.
+
+### Test the agent manually
+
+Run the agent in the foreground:
+
+```bash
+/opt/dapper/venv/bin/python /opt/dapper/agent.py
+```
+
+Confirm that IPFire appears in the dashboard and telemetry updates. Stop the test with Ctrl+C before starting another instance.
+
+### Start the agent without rebooting
+
+You do not need to reboot IPFire just to start the agent. To launch it in the background and append output to a log:
+
+```bash
+/opt/dapper/venv/bin/python /opt/dapper/agent.py \
+  >> /var/log/dapper-agent.log 2>&1 &
+```
+
+Do not run this if an instance is already running, or you may start duplicate agents reporting the same client identity.
+Check the process and log:
+
+```bash
+ps aux | grep '[a]gent.py'
+tail -n 50 /var/log/dapper-agent.log
+```
+
+This starts the agent for the current boot; it does not configure automatic startup.
+
+### Configure startup with rc.local
+
+Inspect the file before editing:
+
+```bash
+ls -l /etc/sysconfig/rc.local
+cat /etc/sysconfig/rc.local
+```
+
+If the file exists and is used by your IPFire version, edit it:
+
+```bash
+vim /etc/sysconfig/rc.local
+```
+
+Preserve existing contents and add this command, keeping any existing shebang at the top:
+
+```bash
+/opt/dapper/venv/bin/python /opt/dapper/agent.py \
+  >> /var/log/dapper-agent.log 2>&1 &
+```
+
+Do not replace other startup commands or add a second shebang. If needed, make the file executable:
+
+```bash
+chmod +x /etc/sysconfig/rc.local
+```
+
+Making the file executable does not prove IPFire invokes it at boot. Confirm the startup mechanism for your installed IPFire version. Executing the entire rc.local file manually can rerun all its commands, so inspect it first and avoid doing so if it contains operations that should only run during boot.
+You can test the Dapper command immediately using the background-start command above, without rebooting. A successful manual launch verifies the command, but only a later boot during a suitable maintenance window can confirm that the startup hook is invoked.
+
+### Troubleshooting
+
+- Check /var/log/dapper-agent.log for Python, configuration, or connection errors.
+- Verify that the virtual-environment Python and agent.py exist at the paths above.
+- Verify that the agent can read /etc/dapper/client.json.
+- Confirm that the configured server URL is reachable from IPFire.
+- If the agent works manually but not after boot, verify that your IPFire version invokes /etc/sysconfig/rc.local and inspect startup logs.
+
 ## Windows
 
 The recommended Windows deployment uses Python and the WinSW service
