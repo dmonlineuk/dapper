@@ -36,7 +36,7 @@
             font-size: 14px;
         }
 
-        button, input {
+        button, input, select {
             font: inherit;
         }
 
@@ -370,10 +370,21 @@
             color: var(--red);
         }
 
+        .small-select {
+            max-width: 100%;
+            padding: 7px 9px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            background: var(--panel);
+            cursor: pointer;
+        }
+
         .toolbar {
             display: flex;
             gap: 10px;
             align-items: center;
+            flex-wrap: wrap;
         }
 
         .small-button {
@@ -495,6 +506,14 @@
             <h2>Clients</h2>
 
             <div class="toolbar">
+                <label for="network-view" class="muted">Network</label>
+
+                <select id="network-view" class="small-select">
+                    <option value="primary">Primary only</option>
+                    <option value="physical">Physical adapters</option>
+                    <option value="all">All interfaces</option>
+                </select>
+
                 <span class="muted" id="refresh-interval">
                     Refreshes every 10s
                 </span>
@@ -537,6 +556,7 @@
     let timer = null;
     let refreshing = false;
     let disconnected = false;
+    let currentHosts = [];
 
     function formatDuration(seconds) {
         if (!Number.isFinite(seconds) || seconds < 0) {
@@ -703,10 +723,88 @@
         );
     }
 
+    function interfacePriority(iface) {
+        const type = (iface.type || "unknown").toLowerCase();
+
+        // Prefer an active physical network connection.
+        if (
+            iface.is_up === true &&
+            (type === "ethernet" || type === "wifi")
+        ) {
+            return type === "ethernet" ? 1 : 2;
+        }
+
+        // Other physical adapters remain useful, even when disconnected.
+        if (type === "ethernet" || type === "wifi") {
+            return 3;
+        }
+
+        // VPNs and virtual adapters are useful in the full view.
+        if (type === "vpn" || type === "virtual") {
+            return 4;
+        }
+
+        // Loopback and unclassified interfaces are lowest priority.
+        if (type === "loopback") {
+            return 5;
+        }
+
+        return 6;
+    }
+
+    function selectInterfaces(interfaces, view) {
+        const sorted = [...interfaces].sort((a, b) => {
+            const priorityDifference =
+                interfacePriority(a) - interfacePriority(b);
+
+            if (priorityDifference !== 0) {
+                return priorityDifference;
+            }
+
+            return (a.name || "").localeCompare(b.name || "");
+        });
+
+        if (view === "all") {
+            return sorted;
+        }
+
+        if (view === "physical") {
+            return sorted.filter(iface => {
+                const type = (iface.type || "").toLowerCase();
+
+                return type === "ethernet" || type === "wifi";
+            });
+        }
+
+        // Primary view: display only the highest-priority physical
+        // adapter for this host. If no active physical adapter exists,
+        // fall back to the first physical adapter, even if it is down.
+        const physical = sorted.filter(iface => {
+            const type = (iface.type || "").toLowerCase();
+
+            return type === "ethernet" || type === "wifi";
+        });
+
+        if (physical.length > 0) {
+            const active = physical.find(iface => iface.is_up === true);
+
+            return [active || physical[0]];
+        }
+
+        // Some hosts may only have virtual, VPN or unknown interfaces.
+        // Show the best available interface instead of an empty section.
+        return sorted.length > 0 ? [sorted[0]] : [];
+    }
+
     function addNetworkSection(card, network) {
-        const interfaces = Array.isArray(network?.interfaces)
+        const allInterfaces = Array.isArray(network?.interfaces)
             ? network.interfaces
             : [];
+
+        const interfaces = selectInterfaces(
+            allInterfaces,
+            document.getElementById("network-view").value
+        );
 
         if (interfaces.length === 0) {
             return;
@@ -715,12 +813,13 @@
         const section = document.createElement("section");
         section.className = "network-section";
 
-        addText(
-            section,
-            "div",
-            "network-heading",
-            `Network interfaces (${interfaces.length})`
-        );
+        const heading = document.createElement("div");
+        heading.className = "network-heading";
+
+        heading.textContent =
+            `Network interfaces (${interfaces.length} of ${allInterfaces.length})`;
+
+        section.appendChild(heading);
 
         for (const iface of interfaces) {
             const panel = document.createElement("div");
@@ -834,7 +933,13 @@
             section.appendChild(panel);
         }
 
-        card.appendChild(section);
+        const footer = card.querySelector(".host-footer");
+
+        if (footer) {
+            card.insertBefore(section, footer);
+        } else {
+            card.appendChild(section);
+        }
     }
 
     function createHostCard(host) {
@@ -950,6 +1055,34 @@
         return card;
     }
 
+    function rerenderNetworkSections() {
+        document.querySelectorAll(".host").forEach(card => {
+            const existingSection = card.querySelector(".network-section");
+
+            if (existingSection) {
+                existingSection.remove();
+            }
+        });
+
+        // Rebuild each network section from the latest host response.
+        // The host cards retain their existing CPU, memory and status data.
+        document.querySelectorAll(".host").forEach(card => {
+            const clientId = card.dataset.clientId;
+
+            if (!clientId) {
+                return;
+            }
+
+            const host = currentHosts.find(
+                item => item.client_id === clientId
+            );
+
+            if (host) {
+                addNetworkSection(card, host.network);
+            }
+        });
+    }
+
     function showMessage(message, error = false) {
         dashboardMessage.hidden = false;
         dashboardMessage.className =
@@ -962,6 +1095,9 @@
         dashboardMessage.hidden = true;
         dashboardMessage.textContent = "";
     }
+
+    document.getElementById("network-view")
+        .addEventListener("change", rerenderNetworkSections);
 
     async function refreshHosts() {
         if (!token || refreshing || disconnected) {
@@ -996,6 +1132,8 @@
             }
 
             const hosts = data.hosts;
+
+            currentHosts = hosts;
 
             const online = hosts.filter(
                 host => host.status === "online"
@@ -1066,6 +1204,9 @@
 
         connectionStatus.textContent = "Not connected";
         lastRefresh.textContent = "Authentication required";
+
+        currentHosts = [];
+        document.getElementById("network-view").value = "primary";
     }
 
     loginForm.addEventListener("submit", async event => {
