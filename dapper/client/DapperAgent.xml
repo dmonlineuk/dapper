@@ -1,0 +1,12 @@
+<service>
+  <id>DapperAgent</id>
+  <name>Dapper Network Monitoring Agent</name>
+  <description>Reports system telemetry to Dapper.</description>
+
+  <executable>C:\Program Files\Dapper\venv\Scripts\python.exe</executable>
+  <arguments>"C:\Program Files\Dapper\agent.py"</arguments>
+
+  <workingdirectory>C:\Program Files\Dapper</workingdirectory>
+
+  <log mode="roll"></log>
+</service>

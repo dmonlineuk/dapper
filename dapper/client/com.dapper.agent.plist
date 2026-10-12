@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC
+  "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.dapper.agent</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Library/Application Support/Dapper/venv/bin/python</string>
+        <string>/Library/Application Support/Dapper/agent.py</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/var/log/dapper-agent.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/var/log/dapper-agent-error.log</string>
+</dict>
+</plist>

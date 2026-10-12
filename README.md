@@ -1,14 +1,16 @@
 # dapper
 Network Health Monitoring and Dashboard
 
-## build
+## Server
+
+### build
 
 ```bash
 cd dapper
 podman build -t dapper .
 ```
 
-## run
+### run
 
 ```bash
 podman run -d \
@@ -19,3 +21,7 @@ podman run -d \
   -e HEARTBEAT_TIMEOUT_SECONDS=90 \
   dapper
 ```
+
+## Clients
+
+See README.md in the dapper/client subfolder for OS specific instructions.
