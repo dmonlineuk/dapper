@@ -122,10 +122,10 @@ def load_config() -> dict:
     if (
         isinstance(interval, bool)
         or not isinstance(interval, (int, float))
-        or not 5 <= interval <= 3600
+        or not 1 <= interval <= 3600
     ):
         logger.error(
-            "interval_seconds must be between 5 and 3600."
+            "interval_seconds must be between 1 and 3600."
         )
         raise SystemExit(1)
 

@@ -514,6 +514,20 @@
                     <option value="all">All interfaces</option>
                 </select>
 
+                <label for="refresh-rate" class="muted">
+                    Refresh:
+                </label>
+
+                <select id="refresh-rate" class="small-select">
+                    <option value="1">1 second</option>
+                    <option value="2">2 seconds</option>
+                    <option value="5">5 seconds</option>
+                    <option value="10">10 seconds</option>
+                    <option value="15">15 seconds</option>
+                    <option value="30">30 seconds</option>
+                    <option value="60">60 seconds</option>
+                </select>
+
                 <span class="muted" id="refresh-interval">
                     Refreshes every 10s
                 </span>
@@ -537,7 +551,11 @@
 (() => {
     "use strict";
 
-    const REFRESH_MS = 10_000;
+    const DEFAULT_REFRESH_SECONDS = 10;
+
+    const REFRESH_OPTIONS = [1, 2, 5, 10, 15, 30, 60];
+
+    const CONFIG_URL = "/api/v1/config";
     const API_URL = "/api/v1/hosts";
 
     const loginPanel = document.getElementById("login-panel");
@@ -557,6 +575,8 @@
     let refreshing = false;
     let disconnected = false;
     let currentHosts = [];
+
+    let refreshSeconds = DEFAULT_REFRESH_SECONDS;
 
     function formatDuration(seconds) {
         if (!Number.isFinite(seconds) || seconds < 0) {
@@ -1096,8 +1116,64 @@
         dashboardMessage.textContent = "";
     }
 
-    document.getElementById("network-view")
-        .addEventListener("change", rerenderNetworkSections);
+    function updateRefreshLabel() {
+        const label = document.getElementById("refresh-interval");
+
+        if (label) {
+            label.textContent = `Refreshes every ${refreshSeconds}s`;
+        }
+    }
+
+    async function loadDashboardConfig() {
+        const selector = document.getElementById("refresh-rate");
+
+        try {
+            const response = await fetch(CONFIG_URL, {
+                method: "GET",
+                cache: "no-store",
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const config = await response.json();
+            const configuredSeconds = Number(
+                config.dashboard_refresh_seconds
+            );
+
+            if (
+                Number.isInteger(configuredSeconds) &&
+                REFRESH_OPTIONS.includes(configuredSeconds)
+            ) {
+                refreshSeconds = configuredSeconds;
+            } else {
+                refreshSeconds = DEFAULT_REFRESH_SECONDS;
+            }
+        } catch (error) {
+            console.warn(
+                "Unable to load dashboard configuration; using the default refresh interval.",
+                error
+            );
+
+            refreshSeconds = DEFAULT_REFRESH_SECONDS;
+        }
+
+        selector.value = String(refreshSeconds);
+        updateRefreshLabel();
+        restartRefreshTimer();
+    }
+
+    function restartRefreshTimer() {
+        if (timer !== null) {
+            clearInterval(timer);
+            timer = null;
+        }
+
+        if (!disconnected && token) {
+            timer = setInterval(refreshHosts, refreshSeconds * 1000);
+        }
+    }
 
     async function refreshHosts() {
         if (!token || refreshing || disconnected) {
@@ -1237,16 +1313,35 @@
         connectButton.disabled = false;
         connectButton.textContent = "Connect";
 
-        if (!disconnected && token) {
-            timer = setInterval(refreshHosts, REFRESH_MS);
-        }
+        restartRefreshTimer();
     });
+
+    loadDashboardConfig();
 
     document.getElementById("refresh-button")
         .addEventListener("click", refreshHosts);
 
     document.getElementById("disconnect-button")
         .addEventListener("click", () => disconnect());
+
+    document.getElementById("network-view")
+        .addEventListener("change", rerenderNetworkSections);
+
+    document
+        .getElementById("refresh-rate")
+        .addEventListener("change", (event) => {
+            const selectedSeconds = Number(event.target.value);
+
+            if (!REFRESH_OPTIONS.includes(selectedSeconds)) {
+                event.target.value = String(refreshSeconds);
+                return;
+            }
+
+            refreshSeconds = selectedSeconds;
+
+            updateRefreshLabel();
+            restartRefreshTimer();
+        });
 
 })();
 </script>

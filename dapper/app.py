@@ -19,6 +19,33 @@ HEARTBEAT_TIMEOUT = int(
     os.getenv("HEARTBEAT_TIMEOUT_SECONDS", "90")
 )
 
+DEFAULT_DASHBOARD_REFRESH_SECONDS = 10
+MIN_DASHBOARD_REFRESH_SECONDS = 1
+MAX_DASHBOARD_REFRESH_SECONDS = 60
+
+def get_dashboard_refresh_seconds() -> int:
+    raw_value = os.getenv(
+        "DAPPER_DASHBOARD_REFRESH_SECONDS",
+        str(DEFAULT_DASHBOARD_REFRESH_SECONDS),
+    )
+
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise RuntimeError(
+            "DAPPER_DASHBOARD_REFRESH_SECONDS must be an integer "
+            "between 1 and 60."
+        ) from exc
+
+    if not MIN_DASHBOARD_REFRESH_SECONDS <= value <= MAX_DASHBOARD_REFRESH_SECONDS:
+        raise RuntimeError(
+            "DAPPER_DASHBOARD_REFRESH_SECONDS must be between 1 and 60."
+        )
+
+    return value
+
+DASHBOARD_REFRESH_SECONDS = get_dashboard_refresh_seconds()
+
 # The API token is loaded at startup, not hard-coded.
 API_TOKEN: str | None = None
 
@@ -106,6 +133,14 @@ async def health():
     return {
         "status": "ok",
         "time": utc_now(),
+    }
+
+@app.get("/api/v1/config")
+async def get_config():
+    return {
+        "dashboard_refresh_seconds": DASHBOARD_REFRESH_SECONDS,
+        "min_dashboard_refresh_seconds": MIN_DASHBOARD_REFRESH_SECONDS,
+        "max_dashboard_refresh_seconds": MAX_DASHBOARD_REFRESH_SECONDS,
     }
 
 @app.post(
