@@ -194,8 +194,26 @@
             padding: 20px;
         }
 
+        .host-details {
+            margin: 0 20px 16px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, .12);
+        }
+
+        .host-details > summary {
+            padding: 12px 14px;
+            color: var(--text);
+            font-weight: 650;
+            cursor: pointer;
+        }
+
+        .host-details-content {
+            padding: 0 14px 14px;
+        }
+
         .network-section {
-            padding: 0 20px 20px;
+            padding: 0;
         }
 
         .network-heading {
@@ -278,15 +296,6 @@
             color: var(--red);
         }
 
-        .cpu-details {
-            margin: -8px 0 20px;
-            padding: 12px;
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            background: rgba(0, 0, 0, .12);
-        }
-
-        .cpu-detail-heading,
         .cpu-core-label {
             display: flex;
             justify-content: space-between;
@@ -294,16 +303,6 @@
             color: var(--muted);
             font-size: 12px;
             font-variant-numeric: tabular-nums;
-        }
-
-        .cpu-detail-heading {
-            margin-bottom: 10px;
-        }
-
-        .cpu-counts {
-            color: var(--text);
-            font-weight: 600;
-            text-align: right;
         }
 
         .cpu-core-grid {
@@ -844,13 +843,10 @@
             return;
         }
 
-        const details = document.createElement("section");
-        details.className = "cpu-details";
+        const details = document.createElement("details");
+        details.className = "host-details cpu-details";
 
-        const heading = document.createElement("div");
-        heading.className = "cpu-detail-heading";
-        addText(heading, "span", "", "CPU cores");
-
+        const heading = document.createElement("summary");
         const counts = [];
         if (hasPhysicalCount) {
             counts.push(`${physicalCount} physical`);
@@ -858,8 +854,13 @@
         if (hasLogicalCount) {
             counts.push(`${logicalCount} logical`);
         }
-        addText(heading, "span", "cpu-counts", counts.join(" · "));
+        heading.textContent = counts.length > 0
+            ? `CPU cores · ${counts.join(" · ")}`
+            : "CPU core details";
         details.appendChild(heading);
+
+        const content = document.createElement("div");
+        content.className = "host-details-content";
 
         if (percentages.length > 0) {
             const grid = document.createElement("div");
@@ -891,18 +892,19 @@
                 grid.appendChild(core);
             });
 
-            details.appendChild(grid);
+            content.appendChild(grid);
         }
 
+        details.appendChild(content);
         parent.appendChild(details);
     }
 
     function addOsUpdateDetails(parent, updates) {
         if (!updates || typeof updates !== "object" || Array.isArray(updates)) {
-            return;
+            updates = {};
         }
 
-        let updateCount = "Checking";
+        let updateCount = "Unavailable";
         if (
             updates.status === "checked" &&
             Number.isInteger(updates.available_count) &&
@@ -915,6 +917,8 @@
             updateCount = "Unsupported";
         } else if (updates.status === "error") {
             updateCount = "Unavailable";
+        } else if (updates.status === "checking" || updates.status === "pending") {
+            updateCount = "Checking";
         }
 
         let securityStatus = "Unknown";
@@ -928,15 +932,15 @@
             securityStatus = "Checking";
         }
 
-        addMetric(parent, "OS updates", updateCount);
+        const updateSummary = updateCount === "None"
+            ? "Up to date"
+            : `${updateCount} · security ${securityStatus.toLowerCase()}`;
         addMetric(
             parent,
-            "Security updates",
-            securityStatus,
+            "Updates",
+            updateSummary,
             null,
-            updates.security_available === true
-                ? "update-security-warning"
-                : ""
+            updates.security_available === true ? "update-security-warning" : ""
         );
     }
 
@@ -1096,25 +1100,18 @@
             return;
         }
 
-        const section = document.createElement("section");
-        section.className = "network-section";
+        const section = document.createElement("details");
+        section.className = "host-details network-section";
 
-        const heading = document.createElement("div");
-        heading.className = "network-heading";
-        heading.style.display = "flex";
-        heading.style.justifyContent = "space-between";
-        heading.style.alignItems = "center";
-        heading.style.gap = "10px";
+        const heading = document.createElement("summary");
+        heading.textContent = `Network adapters · ${interfaces.length} shown of ${allInterfaces.length}`;
+        section.appendChild(heading);
 
-        addText(
-            heading,
-            "span",
-            "",
-            `Network interfaces (${interfaces.length} shown of ${allInterfaces.length})`
-        );
+        const content = document.createElement("div");
+        content.className = "host-details-content";
 
         const configureButton = addText(
-            heading,
+            content,
             "button",
             "small-button",
             "Configure"
@@ -1127,8 +1124,6 @@
         configureButton.addEventListener("click", () => {
             openInterfaceSettings(clientId);
         });
-
-        section.appendChild(heading);
 
         for (const iface of interfaces) {
             const panel = document.createElement("div");
@@ -1196,8 +1191,10 @@
             );
 
             panel.appendChild(details);
-            section.appendChild(panel);
+            content.appendChild(panel);
         }
+
+        section.appendChild(content);
 
         const footer = card.querySelector(".host-footer");
         if (footer) {
@@ -1261,7 +1258,6 @@
             formatPercent(metrics.cpu_percent),
             metrics.cpu_percent
         );
-        addCpuDetails(body, metrics);
 
         addMetric(
             body,
@@ -1302,6 +1298,8 @@
         }
 
         card.appendChild(body);
+
+        addCpuDetails(card, metrics);
 
         addNetworkSection(card, host.network, clientId);
 
