@@ -23,7 +23,7 @@ import requests
 
 from functools import lru_cache
 
-VERSION = "0.4.1"
+VERSION = "0.4.2"
 DEFAULT_INTERVAL = 30
 REQUEST_TIMEOUT = 10
 UPDATE_CHECK_INTERVAL_SECONDS = 6 * 60 * 60
@@ -401,61 +401,29 @@ def run_update_command(command: list[str], timeout: int = UPDATE_CHECK_TIMEOUT_S
     return result.stdout
 
 
-def apt_security_update_status(package_names: set[str]):
-    """Classify pending APT upgrades by the repository supplying the candidate."""
+def apt_security_update_status(install_lines: list[str]):
+    """Classify pending upgrades using the repository labels from APT simulation."""
 
-    if not package_names:
+    if not install_lines:
         return False
-    if not shutil.which("apt-cache"):
-        return None
 
-    try:
-        output = run_update_command(
-            ["apt-cache", "policy", *sorted(package_names)],
-            timeout=UPDATE_CHECK_TIMEOUT_SECONDS,
-        )
-    except (OSError, RuntimeError, subprocess.TimeoutExpired):
-        return None
-
-    package_blocks = re.split(
-        r"(?m)^(?:Package:\s*\S+|[^\s:][^\n]*:)\s*$",
-        output,
-    )
-    package_blocks = [
-        block for block in package_blocks
-        if re.search(r"(?m)^\s*Candidate:", block)
-    ]
-    if not package_blocks:
-        return None
-
-    classified = 0
-    security_available = False
-    for block in package_blocks:
-        candidate_match = re.search(r"(?m)^\s*Candidate:\s*(\S+)", block)
-        if not candidate_match or candidate_match.group(1) == "(none)":
+    metadata_available = True
+    for line in install_lines:
+        match = re.search(r"\(([^()]*)\)\s*$", line)
+        if not match:
+            metadata_available = False
             continue
 
-        candidate = candidate_match.group(1)
-        version_lines = list(
-            re.finditer(r"(?m)^\s+(?:\*{3}\s+)?(\S+)\s+\d+\s*$", block)
-        )
-        for index, version_match in enumerate(version_lines):
-            if version_match.group(1) != candidate:
-                continue
-            end = (
-                version_lines[index + 1].start()
-                if index + 1 < len(version_lines)
-                else len(block)
-            )
-            candidate_sources = block[version_match.end():end]
-            classified += 1
-            if re.search(r"security", candidate_sources, flags=re.IGNORECASE):
-                security_available = True
-            break
+        source_details = match.group(1)
+        if re.search(r"security", source_details, flags=re.IGNORECASE):
+            return True
 
-    if classified != len(package_names):
-        return None
-    return security_available
+        # Debian and Ubuntu include the source distribution label in this
+        # parenthesized field. If it is absent, do not report a false negative.
+        if not re.search(r"\b(?:Debian|Ubuntu)(?:-Security)?\s*:", source_details, flags=re.IGNORECASE):
+            metadata_available = False
+
+    return False if metadata_available else None
 
 def check_os_updates() -> dict:
     """Return update counts only; package names remain local to this check."""
@@ -550,13 +518,15 @@ for ($index = 0; $index -lt $result.Updates.Count; $index++) {
 
         if shutil.which("apt-get"):
             output = run_update_command(["apt-get", "-s", "-q", "upgrade"])
+            install_lines = re.findall(r"^Inst\s+\S+.*$", output, flags=re.MULTILINE)
             package_names = {
-                match.group(1)
-                for match in re.finditer(r"^Inst\s+(\S+)", output, flags=re.MULTILINE)
+                line.split()[1]
+                for line in install_lines
+                if len(line.split()) > 1
             }
             return {
                 "available_count": len(package_names),
-                "security_available": apt_security_update_status(package_names),
+                "security_available": apt_security_update_status(install_lines),
                 "status": "checked",
             }
 
