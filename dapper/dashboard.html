@@ -517,6 +517,37 @@
             margin-bottom: 16px;
         }
 
+        .details-dialog {
+            width: min(760px, calc(100% - 32px));
+            max-height: min(85vh, 900px);
+            overflow: auto;
+            padding: 24px;
+            color: var(--text);
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+        }
+
+        .details-dialog::backdrop {
+            background: rgba(0, 0, 0, .65);
+        }
+
+        .details-dialog-content {
+            margin-top: 20px;
+        }
+
+        .detail-buttons {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            padding: 0 20px 16px;
+        }
+
+        .server-version {
+            color: var(--muted);
+            font-size: 12px;
+        }
+
         [hidden] {
             display: none !important;
         }
@@ -653,6 +684,10 @@
                     Refreshes every 10s
                 </span>
 
+                <span class="server-version" id="server-version">
+                    Server version unknown
+                </span>
+
                 <button class="small-button" id="refresh-button">
                     Refresh
                 </button>
@@ -676,6 +711,15 @@
         <div class="interface-dialog-actions">
             <button id="interface-dialog-cancel" class="small-button" type="button">Cancel</button>
             <button id="interface-dialog-save" class="small-button" type="button">Save preferences</button>
+        </div>
+    </dialog>
+
+    <dialog id="details-dialog" class="details-dialog" aria-labelledby="details-dialog-title">
+        <h2 id="details-dialog-title"></h2>
+        <p id="details-dialog-host" class="muted"></p>
+        <div id="details-dialog-content" class="details-dialog-content"></div>
+        <div class="interface-dialog-actions">
+            <button id="details-dialog-close" class="small-button" type="button">Close</button>
         </div>
     </dialog>
 </main>
@@ -707,6 +751,10 @@
     const interfaceConfigList = document.getElementById("interface-config-list");
     const interfaceDialogError = document.getElementById("interface-dialog-error");
     const interfaceDialogSave = document.getElementById("interface-dialog-save");
+    const detailsDialog = document.getElementById("details-dialog");
+    const detailsDialogTitle = document.getElementById("details-dialog-title");
+    const detailsDialogHost = document.getElementById("details-dialog-host");
+    const detailsDialogContent = document.getElementById("details-dialog-content");
 
     let token = null;
     let timer = null;
@@ -717,6 +765,7 @@
     let refreshSeconds = DEFAULT_REFRESH_SECONDS;
     let dashboardConfig = { host_interface_preferences: {} };
     let editingClientId = null;
+    let activeDetails = null;
 
     function formatDuration(seconds) {
         if (!Number.isFinite(seconds) || seconds < 0) {
@@ -852,10 +901,6 @@
             return;
         }
 
-        const details = document.createElement("details");
-        details.className = "host-details cpu-details";
-
-        const heading = document.createElement("summary");
         const counts = [];
         if (hasPhysicalCount) {
             counts.push(`${physicalCount} physical`);
@@ -863,13 +908,12 @@
         if (hasLogicalCount) {
             counts.push(`${logicalCount} logical`);
         }
-        heading.textContent = counts.length > 0
+        parent.dataset.title = counts.length > 0
             ? `CPU cores · ${counts.join(" · ")}`
             : "CPU core details";
-        details.appendChild(heading);
 
         const content = document.createElement("div");
-        content.className = "host-details-content";
+        content.className = "cpu-details-content";
 
         if (percentages.length > 0) {
             const grid = document.createElement("div");
@@ -904,8 +948,7 @@
             content.appendChild(grid);
         }
 
-        details.appendChild(content);
-        parent.appendChild(details);
+        parent.appendChild(content);
     }
 
     function addOsUpdateDetails(parent, updates) {
@@ -1094,7 +1137,7 @@
         return sorted.length > 0 ? [sorted[0]] : [];
     }
 
-    function addNetworkSection(card, network, clientId) {
+    function addNetworkSection(parent, network, clientId) {
         const allInterfaces = Array.isArray(network?.interfaces)
             ? network.interfaces
             : [];
@@ -1109,12 +1152,9 @@
             return;
         }
 
-        const section = document.createElement("details");
+        const section = document.createElement("section");
         section.className = "host-details network-section";
-
-        const heading = document.createElement("summary");
-        heading.textContent = `Network adapters · ${interfaces.length} shown of ${allInterfaces.length}`;
-        section.appendChild(heading);
+        section.dataset.title = `Network adapters · ${interfaces.length} shown of ${allInterfaces.length}`;
 
         const content = document.createElement("div");
         content.className = "host-details-content";
@@ -1205,12 +1245,7 @@
 
         section.appendChild(content);
 
-        const footer = card.querySelector(".host-footer");
-        if (footer) {
-            card.insertBefore(section, footer);
-        } else {
-            card.appendChild(section);
-        }
+        parent.appendChild(section);
     }
 
     function createHostCard(host) {
@@ -1321,9 +1356,28 @@
 
         card.appendChild(body);
 
-        addCpuDetails(card, metrics);
+        const detailButtons = document.createElement("div");
+        detailButtons.className = "detail-buttons";
+        const hasCpuDetails =
+            (Number.isInteger(metrics.cpu_core_count) && metrics.cpu_core_count > 0) ||
+            (Number.isInteger(metrics.cpu_logical_count) && metrics.cpu_logical_count > 0) ||
+            (Array.isArray(metrics.cpu_per_core_percent) && metrics.cpu_per_core_percent.length > 0);
+        const hasNetworkDetails = Array.isArray(host.network?.interfaces) &&
+            host.network.interfaces.length > 0;
 
-        addNetworkSection(card, host.network, clientId);
+        if (hasCpuDetails) {
+            const cpuButton = addText(detailButtons, "button", "small-button", "CPU cores");
+            cpuButton.type = "button";
+            cpuButton.addEventListener("click", () => openDetails("cpu", clientId));
+        }
+        if (hasNetworkDetails) {
+            const networkButton = addText(detailButtons, "button", "small-button", "Network adapters");
+            networkButton.type = "button";
+            networkButton.addEventListener("click", () => openDetails("network", clientId));
+        }
+        if (detailButtons.childElementCount > 0) {
+            card.appendChild(detailButtons);
+        }
 
         const footer = document.createElement("div");
         footer.className = "host-footer";
@@ -1358,31 +1412,35 @@
     }
 
     function rerenderNetworkSections() {
-        document.querySelectorAll(".host").forEach(card => {
-            const existingSection = card.querySelector(".network-section");
+        if (detailsDialog.open && activeDetails?.type === "network") {
+            renderDetailsDialog();
+        }
+    }
 
-            if (existingSection) {
-                existingSection.remove();
-            }
-        });
+    function openDetails(type, clientId) {
+        activeDetails = { type, clientId };
+        renderDetailsDialog();
+        detailsDialog.showModal();
+    }
 
-        // Rebuild each network section from the latest host response.
-        // The host cards retain their existing CPU, memory and status data.
-        document.querySelectorAll(".host").forEach(card => {
-            const clientId = card.dataset.clientId;
+    function renderDetailsDialog() {
+        if (!activeDetails) return;
+        const host = currentHosts.find(item => item.client_id === activeDetails.clientId);
+        detailsDialogContent.replaceChildren();
+        if (!host) {
+            detailsDialogTitle.textContent = "Host details";
+            detailsDialogHost.textContent = "Host data is not available.";
+            return;
+        }
 
-            if (!clientId) {
-                return;
-            }
-
-            const host = currentHosts.find(
-                item => item.client_id === clientId
-            );
-
-            if (host) {
-                addNetworkSection(card, host.network, clientId);
-            }
-        });
+        detailsDialogHost.textContent = `${host.hostname} · updated with dashboard refresh`;
+        if (activeDetails.type === "cpu") {
+            addCpuDetails(detailsDialogContent, host.metrics || {});
+            detailsDialogTitle.textContent = detailsDialogContent.dataset.title || "CPU core details";
+        } else {
+            addNetworkSection(detailsDialogContent, host.network, host.client_id);
+            detailsDialogTitle.textContent = detailsDialogContent.querySelector(".network-section")?.dataset.title || "Network adapters";
+        }
     }
 
     function updateInterfaceMoveButtons() {
@@ -1705,6 +1763,13 @@
             const hosts = data.hosts;
 
             currentHosts = hosts;
+            document.getElementById("server-version").textContent =
+                typeof data.server_version === "string"
+                    ? `Server v${data.server_version}`
+                    : "Server version unknown";
+            if (detailsDialog.open) {
+                renderDetailsDialog();
+            }
 
             const online = hosts.filter(
                 host => host.status === "online"
@@ -1859,6 +1924,9 @@
 
     document.getElementById("interface-dialog-cancel")
         .addEventListener("click", () => interfaceDialog.close());
+
+    document.getElementById("details-dialog-close")
+        .addEventListener("click", () => detailsDialog.close());
 
     interfaceDialogSave.addEventListener("click", saveInterfaceSettings);
 

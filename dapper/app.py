@@ -81,7 +81,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Dapper API",
-    version="0.4.0",
+    version="0.4.2",
     lifespan=lifespan,
 )
 
@@ -305,6 +305,7 @@ async def get_hosts():
         })
     return {
         "count": len(results),
+        "server_version": app.version,
         "hosts": sorted(results, key=lambda host: host["hostname"]),
     }
 
