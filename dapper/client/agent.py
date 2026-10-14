@@ -378,6 +378,9 @@ def collect_telemetry(client_id: str) -> dict:
     """Collect system metrics and per-interface network telemetry."""
 
     memory = psutil.virtual_memory()
+    physical_cpu_count = psutil.cpu_count(logical=False)
+    logical_cpu_count = psutil.cpu_count(logical=True)
+    per_cpu_percent = psutil.cpu_percent(interval=None, percpu=True)
 
     return {
         "client_id": client_id,
@@ -390,6 +393,9 @@ def collect_telemetry(client_id: str) -> dict:
         ),
         "metrics": {
             "cpu_percent": psutil.cpu_percent(interval=None),
+            "cpu_core_count": physical_cpu_count,
+            "cpu_logical_count": logical_cpu_count,
+            "cpu_per_core_percent": per_cpu_percent,
             "memory_percent": memory.percent,
             "memory_total_bytes": memory.total,
             "memory_available_bytes": memory.available,
@@ -448,6 +454,7 @@ def main():
 
         # Prime CPU measurements so the first report is meaningful.
         psutil.cpu_percent(interval=None)
+        psutil.cpu_percent(interval=None, percpu=True)
 
         while not stop_event.is_set():
             started = time.monotonic()

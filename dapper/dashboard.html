@@ -270,6 +270,49 @@
             font-variant-numeric: tabular-nums;
         }
 
+        .metric-value.uptime-warning {
+            color: var(--red);
+        }
+
+        .cpu-details {
+            margin: -8px 0 20px;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: rgba(0, 0, 0, .12);
+        }
+
+        .cpu-detail-heading,
+        .cpu-core-label {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            color: var(--muted);
+            font-size: 12px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .cpu-detail-heading {
+            margin-bottom: 10px;
+        }
+
+        .cpu-counts {
+            color: var(--text);
+            font-weight: 600;
+            text-align: right;
+        }
+
+        .cpu-core-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(105px, 1fr));
+            gap: 8px 12px;
+        }
+
+        .cpu-core-label {
+            margin-bottom: 4px;
+            font-size: 11px;
+        }
+
         .bar {
             height: 7px;
             background: #263449;
@@ -739,7 +782,7 @@
         return element;
     }
 
-    function addMetric(parent, label, value, percentage = null) {
+    function addMetric(parent, label, value, percentage = null, valueClass = "") {
         const metric = document.createElement("div");
         metric.className = "metric";
 
@@ -747,7 +790,12 @@
         heading.className = "metric-heading";
 
         addText(heading, "span", "metric-label", label);
-        addText(heading, "span", "metric-value", value);
+        addText(
+            heading,
+            "span",
+            valueClass ? `metric-value ${valueClass}` : "metric-value",
+            value
+        );
 
         metric.appendChild(heading);
 
@@ -775,6 +823,74 @@
         }
 
         parent.appendChild(metric);
+    }
+
+    function addCpuDetails(parent, metrics) {
+        const percentages = Array.isArray(metrics.cpu_per_core_percent)
+            ? metrics.cpu_per_core_percent
+            : [];
+        const physicalCount = metrics.cpu_core_count;
+        const logicalCount = metrics.cpu_logical_count;
+        const hasPhysicalCount =
+            Number.isInteger(physicalCount) && physicalCount > 0;
+        const hasLogicalCount =
+            Number.isInteger(logicalCount) && logicalCount > 0;
+
+        if (!hasPhysicalCount && !hasLogicalCount && percentages.length === 0) {
+            return;
+        }
+
+        const details = document.createElement("section");
+        details.className = "cpu-details";
+
+        const heading = document.createElement("div");
+        heading.className = "cpu-detail-heading";
+        addText(heading, "span", "", "CPU cores");
+
+        const counts = [];
+        if (hasPhysicalCount) {
+            counts.push(`${physicalCount} physical`);
+        }
+        if (hasLogicalCount) {
+            counts.push(`${logicalCount} logical`);
+        }
+        addText(heading, "span", "cpu-counts", counts.join(" · "));
+        details.appendChild(heading);
+
+        if (percentages.length > 0) {
+            const grid = document.createElement("div");
+            grid.className = "cpu-core-grid";
+
+            percentages.forEach((percentage, index) => {
+                const core = document.createElement("div");
+                const label = document.createElement("div");
+                label.className = "cpu-core-label";
+                addText(label, "span", "", `CPU ${index + 1}`);
+                addText(label, "span", "", formatPercent(percentage));
+                core.appendChild(label);
+
+                const bar = document.createElement("div");
+                bar.className = "bar";
+                const fill = document.createElement("div");
+                fill.className = "bar-fill";
+                const valid =
+                    typeof percentage === "number" &&
+                    Number.isFinite(percentage) &&
+                    percentage >= 0 &&
+                    percentage <= 100;
+                fill.style.width = valid ? `${percentage}%` : "0%";
+                if (valid && percentage >= 85) {
+                    fill.classList.add("high");
+                }
+                bar.appendChild(fill);
+                core.appendChild(bar);
+                grid.appendChild(core);
+            });
+
+            details.appendChild(grid);
+        }
+
+        parent.appendChild(details);
     }
 
     function formatBytes(value) {
@@ -1098,6 +1214,7 @@
             formatPercent(metrics.cpu_percent),
             metrics.cpu_percent
         );
+        addCpuDetails(body, metrics);
 
         addMetric(
             body,
@@ -1106,10 +1223,18 @@
             metrics.memory_percent
         );
 
+        const uptimeSeconds = host.uptime_seconds;
+        const uptimeWarning =
+            typeof uptimeSeconds === "number" &&
+            Number.isFinite(uptimeSeconds) &&
+            uptimeSeconds > 30 * 24 * 60 * 60;
+
         addMetric(
             body,
             "System uptime",
-            formatDuration(host.uptime_seconds)
+            formatDuration(uptimeSeconds),
+            null,
+            uptimeWarning ? "uptime-warning" : ""
         );
 
         if (
