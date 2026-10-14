@@ -23,7 +23,7 @@ import requests
 
 from functools import lru_cache
 
-VERSION = "0.4.2"
+VERSION = "0.4.3"
 DEFAULT_INTERVAL = 30
 REQUEST_TIMEOUT = 10
 UPDATE_CHECK_INTERVAL_SECONDS = 6 * 60 * 60
@@ -425,6 +425,40 @@ def apt_security_update_status(install_lines: list[str]):
 
     return False if metadata_available else None
 
+
+def check_macos_software_updates() -> dict:
+    """Read macOS update availability, including its no-updates response."""
+
+    result = subprocess.run(
+        ["softwareupdate", "--list"],
+        capture_output=True,
+        text=True,
+        timeout=UPDATE_CHECK_TIMEOUT_SECONDS,
+        check=False,
+    )
+    output = f"{result.stdout or ''}\n{result.stderr or ''}"
+    no_updates = re.search(
+        r"no (?:new )?(?:software|updates) available",
+        output,
+        flags=re.IGNORECASE,
+    ) is not None
+
+    labels = re.findall(
+        r"^\s*\*\s+(?:Label|Name):\s*.+$",
+        output,
+        flags=re.MULTILINE,
+    )
+    if result.returncode != 0 and not no_updates:
+        raise RuntimeError("macOS update query failed.")
+    if not labels and not no_updates:
+        raise RuntimeError("macOS update output could not be interpreted.")
+
+    return {
+        "available_count": len(labels),
+        "security_available": False if not labels else None,
+        "status": "checked",
+    }
+
 def check_os_updates() -> dict:
     """Return update counts only; package names remain local to this check."""
 
@@ -479,23 +513,7 @@ for ($index = 0; $index -lt $result.Updates.Count; $index++) {
     if sys.platform == "darwin":
         if not shutil.which("softwareupdate"):
             return {"available_count": None, "security_available": None, "status": "unsupported"}
-        output = run_update_command(["softwareupdate", "--list"])
-        labels = re.findall(
-            r"^\s*\*\s+(?:Label|Name):\s*.+$",
-            output,
-            flags=re.MULTILINE,
-        )
-        if not labels and not re.search(
-            r"no (?:new )?(?:software|updates) available",
-            output,
-            flags=re.IGNORECASE,
-        ):
-            raise RuntimeError("macOS update output could not be interpreted.")
-        return {
-            "available_count": len(labels),
-            "security_available": False if not labels else None,
-            "status": "checked",
-        }
+        return check_macos_software_updates()
 
     if sys.platform.startswith("linux"):
         if shutil.which("dnf"):
