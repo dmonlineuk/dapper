@@ -23,7 +23,7 @@ import requests
 
 from functools import lru_cache
 
-VERSION = "0.2.0"
+VERSION = "0.4.0"
 DEFAULT_INTERVAL = 30
 REQUEST_TIMEOUT = 10
 UPDATE_CHECK_INTERVAL_SECONDS = 6 * 60 * 60
@@ -616,6 +616,7 @@ def collect_telemetry(client_id: str) -> dict:
         "hostname": socket.gethostname(),
         "platform": platform.system().lower(),
         "architecture": platform.machine().lower(),
+        "agent_version": VERSION,
         "uptime_seconds": max(
             0,
             int(time.time() - psutil.boot_time()),

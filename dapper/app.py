@@ -112,6 +112,7 @@ class Telemetry(BaseModel):
     hostname: str = Field(min_length=1, max_length=253)
     platform: str = Field(min_length=1, max_length=64)
     architecture: str = Field(min_length=1, max_length=64)
+    agent_version: str | None = Field(default=None, min_length=1, max_length=32)
     uptime_seconds: float | None = Field(default=None, ge=0)
     metrics: dict[str, Any] = Field(default_factory=dict)
     network: dict[str, Any] = Field(default_factory=dict)
@@ -270,6 +271,7 @@ async def receive_telemetry(data: Telemetry):
             "hostname": hostname,
             "platform": data.platform,
             "architecture": data.architecture,
+            "agent_version": data.agent_version,
             "uptime_seconds": data.uptime_seconds,
             "metrics": data.metrics,
             "network": data.network,

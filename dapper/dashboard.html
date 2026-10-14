@@ -350,6 +350,11 @@
             font-size: 12px;
         }
 
+        .host-agent-version {
+            color: var(--muted);
+            font-variant-numeric: tabular-nums;
+        }
+
         .empty, .message {
             background: var(--panel);
             border: 1px solid var(--border);
@@ -1305,6 +1310,12 @@
 
         const footer = document.createElement("div");
         footer.className = "host-footer";
+
+        const agentVersion =
+            typeof host.agent_version === "string" && host.agent_version.trim()
+                ? `Agent v${host.agent_version.trim()}`
+                : "Agent version unknown";
+        addText(footer, "span", "host-agent-version", agentVersion);
 
         addText(
             footer,
