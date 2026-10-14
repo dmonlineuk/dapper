@@ -23,7 +23,7 @@ import requests
 
 from functools import lru_cache
 
-VERSION = "0.4.4"
+VERSION = "0.4.5"
 DEFAULT_INTERVAL = 30
 REQUEST_TIMEOUT = 10
 UPDATE_CHECK_INTERVAL_SECONDS = 6 * 60 * 60
@@ -37,6 +37,32 @@ update_status_cache = {
     "checked_at": None,
 }
 next_update_check = 0.0
+
+
+def check_pending_restart() -> bool | None:
+    """Report whether the operating system indicates a restart is required."""
+
+    if sys.platform == "win32":
+        import winreg
+
+        reboot_keys = (
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending",
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired",
+        )
+        for key_path in reboot_keys:
+            try:
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path):
+                    return True
+            except FileNotFoundError:
+                continue
+            except OSError:
+                return None
+        return False
+
+    if sys.platform.startswith("linux"):
+        return Path("/var/run/reboot-required").exists()
+
+    return None
 
 stop_event = Event()
 
@@ -618,6 +644,7 @@ def collect_telemetry(client_id: str) -> dict:
             0,
             int(time.time() - psutil.boot_time()),
         ),
+        "pending_restart": check_pending_restart(),
         "metrics": {
             "cpu_percent": psutil.cpu_percent(interval=None),
             "cpu_core_count": physical_cpu_count,

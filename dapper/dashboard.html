@@ -296,6 +296,10 @@
             color: var(--red);
         }
 
+        .metric-value.restart-warning {
+            color: var(--red);
+        }
+
         .cpu-core-label {
             display: flex;
             justify-content: space-between;
@@ -1286,6 +1290,19 @@
         );
 
         addOsUpdateDetails(body, metrics.os_updates);
+
+        const restartStatus = host.pending_restart;
+        addMetric(
+            body,
+            "Pending restart",
+            restartStatus === true
+                ? "Required"
+                : restartStatus === false
+                    ? "No"
+                    : "Unknown",
+            null,
+            restartStatus === true ? "restart-warning" : ""
+        );
 
         if (
             typeof metrics.memory_total_bytes === "number" &&
