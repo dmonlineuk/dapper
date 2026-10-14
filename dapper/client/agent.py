@@ -23,7 +23,7 @@ import requests
 
 from functools import lru_cache
 
-VERSION = "0.4.3"
+VERSION = "0.4.4"
 DEFAULT_INTERVAL = 30
 REQUEST_TIMEOUT = 10
 UPDATE_CHECK_INTERVAL_SECONDS = 6 * 60 * 60
@@ -409,7 +409,9 @@ def apt_security_update_status(install_lines: list[str]):
 
     metadata_available = True
     for line in install_lines:
-        match = re.search(r"\(([^()]*)\)\s*$", line)
+        # APT may append dependency annotations such as [] or
+        # [systemd:amd64] after the repository details.
+        match = re.search(r"\(([^()]*)\)(?:\s+\[[^]]*\])*\s*$", line)
         if not match:
             metadata_available = False
             continue
