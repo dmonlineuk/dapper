@@ -274,6 +274,10 @@
             color: var(--red);
         }
 
+        .metric-value.update-security-warning {
+            color: var(--red);
+        }
+
         .cpu-details {
             margin: -8px 0 20px;
             padding: 12px;
@@ -893,6 +897,49 @@
         parent.appendChild(details);
     }
 
+    function addOsUpdateDetails(parent, updates) {
+        if (!updates || typeof updates !== "object" || Array.isArray(updates)) {
+            return;
+        }
+
+        let updateCount = "Checking";
+        if (
+            updates.status === "checked" &&
+            Number.isInteger(updates.available_count) &&
+            updates.available_count >= 0
+        ) {
+            updateCount = updates.available_count === 0
+                ? "None"
+                : `${updates.available_count} pending`;
+        } else if (updates.status === "unsupported") {
+            updateCount = "Unsupported";
+        } else if (updates.status === "error") {
+            updateCount = "Unavailable";
+        }
+
+        let securityStatus = "Unknown";
+        if (typeof updates.security_available === "boolean") {
+            securityStatus = updates.security_available ? "Pending" : "None";
+        } else if (updates.status === "unsupported") {
+            securityStatus = "Unsupported";
+        } else if (updates.status === "error") {
+            securityStatus = "Unavailable";
+        } else if (updates.status === "checking" || updates.status === "pending") {
+            securityStatus = "Checking";
+        }
+
+        addMetric(parent, "OS updates", updateCount);
+        addMetric(
+            parent,
+            "Security updates",
+            securityStatus,
+            null,
+            updates.security_available === true
+                ? "update-security-warning"
+                : ""
+        );
+    }
+
     function formatBytes(value) {
         if (
             typeof value !== "number" ||
@@ -1236,6 +1283,8 @@
             null,
             uptimeWarning ? "uptime-warning" : ""
         );
+
+        addOsUpdateDetails(body, metrics.os_updates);
 
         if (
             typeof metrics.memory_total_bytes === "number" &&

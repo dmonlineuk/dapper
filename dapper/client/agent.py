@@ -3,28 +3,40 @@ import json
 import logging
 import os
 import platform
+import re
+import shutil
 import signal
 import socket
+import subprocess
 import sys
 import time
 import tempfile
 
+from datetime import datetime, timezone
 from pathlib import Path
-from threading import Event
+from threading import Event, Lock, Thread
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 import psutil
 import requests
 
-import re
-import subprocess
-
 from functools import lru_cache
 
 VERSION = "0.2.0"
 DEFAULT_INTERVAL = 30
 REQUEST_TIMEOUT = 10
+UPDATE_CHECK_INTERVAL_SECONDS = 6 * 60 * 60
+UPDATE_CHECK_TIMEOUT_SECONDS = 45
+
+update_status_lock = Lock()
+update_status_cache = {
+    "available_count": None,
+    "security_available": None,
+    "status": "pending",
+    "checked_at": None,
+}
+next_update_check = 0.0
 
 stop_event = Event()
 
@@ -374,6 +386,173 @@ def collect_network_telemetry() -> dict:
 
     return {"interfaces": interfaces}
 
+def run_update_command(command: list[str], timeout: int = UPDATE_CHECK_TIMEOUT_SECONDS):
+    """Run a read-only update query without exposing its output to telemetry."""
+
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("Update query failed.")
+    return result.stdout
+
+def check_os_updates() -> dict:
+    """Return update counts only; package names remain local to this check."""
+
+    if sys.platform == "win32":
+        script = r"""
+$ErrorActionPreference = 'Stop'
+$session = New-Object -ComObject Microsoft.Update.Session
+$searcher = $session.CreateUpdateSearcher()
+$result = $searcher.Search("IsInstalled=0 and IsHidden=0 and Type='Software'")
+$securityAvailable = $false
+for ($index = 0; $index -lt $result.Updates.Count; $index++) {
+    $update = $result.Updates.Item($index)
+    if (-not [string]::IsNullOrWhiteSpace([string]$update.MsrcSeverity)) {
+        $securityAvailable = $true
+    }
+}
+[PSCustomObject]@{
+    available_count = $result.Updates.Count
+    security_available = $securityAvailable
+} | ConvertTo-Json -Compress
+"""
+        output = run_update_command(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                script,
+            ],
+            timeout=UPDATE_CHECK_TIMEOUT_SECONDS,
+        )
+        result = json.loads(output)
+        if not isinstance(result, dict):
+            raise RuntimeError("Windows Update returned an unexpected result.")
+        count = result.get("available_count")
+        security_available = result.get("security_available")
+        if (
+            isinstance(count, bool)
+            or not isinstance(count, int)
+            or count < 0
+            or not isinstance(security_available, bool)
+        ):
+            raise RuntimeError("Windows Update returned an unexpected result.")
+        return {
+            "available_count": count,
+            "security_available": security_available,
+            "status": "checked",
+        }
+
+    if sys.platform == "darwin":
+        if not shutil.which("softwareupdate"):
+            return {"available_count": None, "security_available": None, "status": "unsupported"}
+        output = run_update_command(["softwareupdate", "--list"])
+        labels = re.findall(
+            r"^\s*\*\s+(?:Label|Name):\s*.+$",
+            output,
+            flags=re.MULTILINE,
+        )
+        if not labels and not re.search(
+            r"no (?:new )?(?:software|updates) available",
+            output,
+            flags=re.IGNORECASE,
+        ):
+            raise RuntimeError("macOS update output could not be interpreted.")
+        return {
+            "available_count": len(labels),
+            "security_available": False if not labels else None,
+            "status": "checked",
+        }
+
+    if sys.platform.startswith("linux"):
+        if shutil.which("dnf"):
+            packages = run_update_command(
+                ["dnf", "repoquery", "--upgrades", "--qf", "%{name}"]
+            )
+            package_names = {line.strip() for line in packages.splitlines() if line.strip()}
+            try:
+                security_packages = run_update_command(
+                    ["dnf", "repoquery", "--upgrades", "--security", "--qf", "%{name}"]
+                )
+                security_available = any(line.strip() for line in security_packages.splitlines())
+            except (OSError, RuntimeError, subprocess.TimeoutExpired):
+                security_available = None
+            return {
+                "available_count": len(package_names),
+                "security_available": security_available,
+                "status": "checked",
+            }
+
+        if shutil.which("apt-get"):
+            output = run_update_command(["apt-get", "-s", "-q", "upgrade"])
+            package_names = {
+                match.group(1)
+                for match in re.finditer(r"^Inst\s+(\S+)", output, flags=re.MULTILINE)
+            }
+            return {
+                "available_count": len(package_names),
+                "security_available": False if not package_names else None,
+                "status": "checked",
+            }
+
+        if shutil.which("pacman"):
+            output = run_update_command(["pacman", "-Qu"])
+            package_names = {
+                line.split()[0]
+                for line in output.splitlines()
+                if line.split()
+            }
+            return {
+                "available_count": len(package_names),
+                "security_available": False if not package_names else None,
+                "status": "checked",
+            }
+
+    return {"available_count": None, "security_available": None, "status": "unsupported"}
+
+def refresh_os_update_status() -> None:
+    """Refresh cached update status away from the telemetry request path."""
+
+    try:
+        result = check_os_updates()
+    except Exception:
+        # Keep update-query failures out of the telemetry request path and
+        # never include command output or package names in reported status.
+        result = {
+            "available_count": None,
+            "security_available": None,
+            "status": "error",
+        }
+
+    result["checked_at"] = datetime.now(timezone.utc).isoformat()
+    with update_status_lock:
+        update_status_cache.update(result)
+
+def get_os_update_status() -> dict:
+    """Return cached results and schedule an infrequent background check."""
+
+    global next_update_check
+    now = time.monotonic()
+    start_check = False
+    with update_status_lock:
+        if now >= next_update_check:
+            next_update_check = now + UPDATE_CHECK_INTERVAL_SECONDS
+            update_status_cache["status"] = "checking"
+            start_check = True
+        status = dict(update_status_cache)
+
+    if start_check:
+        Thread(target=refresh_os_update_status, daemon=True).start()
+    return status
+
 def collect_telemetry(client_id: str) -> dict:
     """Collect system metrics and per-interface network telemetry."""
 
@@ -399,6 +578,7 @@ def collect_telemetry(client_id: str) -> dict:
             "memory_percent": memory.percent,
             "memory_total_bytes": memory.total,
             "memory_available_bytes": memory.available,
+            "os_updates": get_os_update_status(),
         },
         "network": collect_network_telemetry(),
     }
