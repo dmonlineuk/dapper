@@ -396,6 +396,72 @@
             cursor: pointer;
         }
 
+
+        .interface-dialog {
+            width: min(640px, calc(100% - 32px));
+            max-height: min(80vh, 760px);
+            overflow: auto;
+            padding: 24px;
+            color: var(--text);
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+        }
+
+        .interface-dialog::backdrop {
+            background: rgba(0, 0, 0, .65);
+        }
+
+        .interface-dialog h2 {
+            margin-bottom: 8px;
+        }
+
+        .interface-config-list {
+            display: grid;
+            gap: 8px;
+            margin: 20px 0;
+        }
+
+        .interface-config-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 8px;
+            padding: 10px;
+            background: var(--panel-raised);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+
+        .interface-config-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+            overflow-wrap: anywhere;
+        }
+
+        .interface-config-actions {
+            display: flex;
+            gap: 5px;
+        }
+
+        .interface-config-actions button {
+            min-width: 34px;
+            padding: 5px 8px;
+        }
+
+        .interface-dialog-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .interface-dialog-error {
+            margin-bottom: 16px;
+        }
+
         [hidden] {
             display: none !important;
         }
@@ -545,6 +611,18 @@
         <div id="dashboard-message" hidden></div>
         <div id="host-grid" class="grid"></div>
     </section>
+
+    <dialog id="interface-dialog" class="interface-dialog" aria-labelledby="interface-dialog-title">
+        <h2 id="interface-dialog-title">Configure network interfaces</h2>
+        <p id="interface-dialog-host" class="muted"></p>
+        <p class="muted">Unchecked interfaces remain collected by the agent but are hidden on the dashboard. Changes are shared across browsers and reset when the server restarts.</p>
+        <div id="interface-config-list" class="interface-config-list"></div>
+        <div id="interface-dialog-error" class="message error interface-dialog-error" hidden></div>
+        <div class="interface-dialog-actions">
+            <button id="interface-dialog-cancel" class="small-button" type="button">Cancel</button>
+            <button id="interface-dialog-save" class="small-button" type="button">Save preferences</button>
+        </div>
+    </dialog>
 </main>
 
 <script>
@@ -569,6 +647,11 @@
     const dashboardMessage = document.getElementById("dashboard-message");
     const connectionStatus = document.getElementById("connection-status");
     const lastRefresh = document.getElementById("last-refresh");
+    const interfaceDialog = document.getElementById("interface-dialog");
+    const interfaceDialogHost = document.getElementById("interface-dialog-host");
+    const interfaceConfigList = document.getElementById("interface-config-list");
+    const interfaceDialogError = document.getElementById("interface-dialog-error");
+    const interfaceDialogSave = document.getElementById("interface-dialog-save");
 
     let token = null;
     let timer = null;
@@ -577,6 +660,8 @@
     let currentHosts = [];
 
     let refreshSeconds = DEFAULT_REFRESH_SECONDS;
+    let dashboardConfig = { host_interface_preferences: {} };
+    let editingClientId = null;
 
     function formatDuration(seconds) {
         if (!Number.isFinite(seconds) || seconds < 0) {
@@ -772,8 +857,23 @@
         return 6;
     }
 
-    function selectInterfaces(interfaces, view) {
-        const sorted = [...interfaces].sort((a, b) => {
+    function sortInterfaces(interfaces, preferredOrder = []) {
+        const orderIndex = new Map(
+            preferredOrder.map((name, index) => [name, index])
+        );
+
+        return [...interfaces].sort((a, b) => {
+            const aIndex = orderIndex.has(a.name)
+                ? orderIndex.get(a.name)
+                : Number.MAX_SAFE_INTEGER;
+            const bIndex = orderIndex.has(b.name)
+                ? orderIndex.get(b.name)
+                : Number.MAX_SAFE_INTEGER;
+
+            if (aIndex !== bIndex) {
+                return aIndex - bIndex;
+            }
+
             const priorityDifference =
                 interfacePriority(a) - interfacePriority(b);
 
@@ -783,6 +883,14 @@
 
             return (a.name || "").localeCompare(b.name || "");
         });
+    }
+
+    function selectInterfaces(interfaces, view, clientId) {
+        const preferences =
+            dashboardConfig.host_interface_preferences?.[clientId] || {};
+        const hidden = new Set(preferences.hidden || []);
+        const visible = interfaces.filter(iface => !hidden.has(iface.name));
+        const sorted = sortInterfaces(visible, preferences.order || []);
 
         if (view === "all") {
             return sorted;
@@ -791,42 +899,37 @@
         if (view === "physical") {
             return sorted.filter(iface => {
                 const type = (iface.type || "").toLowerCase();
-
                 return type === "ethernet" || type === "wifi";
             });
         }
 
-        // Primary view: display only the highest-priority physical
-        // adapter for this host. If no active physical adapter exists,
-        // fall back to the first physical adapter, even if it is down.
+        // Primary view: highest-priority visible physical adapter.
         const physical = sorted.filter(iface => {
             const type = (iface.type || "").toLowerCase();
-
             return type === "ethernet" || type === "wifi";
         });
 
         if (physical.length > 0) {
             const active = physical.find(iface => iface.is_up === true);
-
             return [active || physical[0]];
         }
 
-        // Some hosts may only have virtual, VPN or unknown interfaces.
-        // Show the best available interface instead of an empty section.
+        // Hosts with only virtual/bridge/unknown adapters still show one.
         return sorted.length > 0 ? [sorted[0]] : [];
     }
 
-    function addNetworkSection(card, network) {
+    function addNetworkSection(card, network, clientId) {
         const allInterfaces = Array.isArray(network?.interfaces)
             ? network.interfaces
             : [];
 
         const interfaces = selectInterfaces(
             allInterfaces,
-            document.getElementById("network-view").value
+            document.getElementById("network-view").value,
+            clientId
         );
 
-        if (interfaces.length === 0) {
+        if (allInterfaces.length === 0) {
             return;
         }
 
@@ -835,9 +938,32 @@
 
         const heading = document.createElement("div");
         heading.className = "network-heading";
+        heading.style.display = "flex";
+        heading.style.justifyContent = "space-between";
+        heading.style.alignItems = "center";
+        heading.style.gap = "10px";
 
-        heading.textContent =
-            `Network interfaces (${interfaces.length} of ${allInterfaces.length})`;
+        addText(
+            heading,
+            "span",
+            "",
+            `Network interfaces (${interfaces.length} shown of ${allInterfaces.length})`
+        );
+
+        const configureButton = addText(
+            heading,
+            "button",
+            "small-button",
+            "Configure"
+        );
+        configureButton.type = "button";
+        configureButton.setAttribute(
+            "aria-label",
+            `Configure network interfaces for ${clientId}`
+        );
+        configureButton.addEventListener("click", () => {
+            openInterfaceSettings(clientId);
+        });
 
         section.appendChild(heading);
 
@@ -873,12 +999,7 @@
             const details = document.createElement("div");
             details.className = "interface-detail";
 
-            addInterfaceDetail(
-                details,
-                "Link speed",
-                formatLinkSpeed(iface.link_speed_mbps)
-            );
-
+            addInterfaceDetail(details, "Link speed", formatLinkSpeed(iface.link_speed_mbps));
             addInterfaceDetail(
                 details,
                 "IPv4",
@@ -886,7 +1007,6 @@
                     ? iface.ipv4_addresses.join(", ")
                     : null
             );
-
             addInterfaceDetail(
                 details,
                 "IPv6",
@@ -894,55 +1014,18 @@
                     ? iface.ipv6_addresses.join(", ")
                     : null
             );
-
-            addInterfaceDetail(
-                details,
-                "MAC address",
-                iface.mac_address
-            );
-
-            addInterfaceDetail(
-                details,
-                "MTU",
-                iface.mtu
-            );
-
-            addInterfaceDetail(
-                details,
-                "Duplex",
-                iface.duplex
-            );
-
-            addInterfaceDetail(
-                details,
-                "Received",
-                formatBytes(iface.bytes_received)
-            );
-
-            addInterfaceDetail(
-                details,
-                "Sent",
-                formatBytes(iface.bytes_sent)
-            );
-
-            addInterfaceDetail(
-                details,
-                "Packets in",
-                iface.packets_received
-            );
-
-            addInterfaceDetail(
-                details,
-                "Packets out",
-                iface.packets_sent
-            );
-
+            addInterfaceDetail(details, "MAC address", iface.mac_address);
+            addInterfaceDetail(details, "MTU", iface.mtu);
+            addInterfaceDetail(details, "Duplex", iface.duplex);
+            addInterfaceDetail(details, "Received", formatBytes(iface.bytes_received));
+            addInterfaceDetail(details, "Sent", formatBytes(iface.bytes_sent));
+            addInterfaceDetail(details, "Packets in", iface.packets_received);
+            addInterfaceDetail(details, "Packets out", iface.packets_sent);
             addInterfaceDetail(
                 details,
                 "Errors in / out",
                 `${iface.errors_in ?? "—"} / ${iface.errors_out ?? "—"}`
             );
-
             addInterfaceDetail(
                 details,
                 "Drops in / out",
@@ -954,7 +1037,6 @@
         }
 
         const footer = card.querySelector(".host-footer");
-
         if (footer) {
             card.insertBefore(section, footer);
         } else {
@@ -1047,7 +1129,7 @@
 
         card.appendChild(body);
 
-        addNetworkSection(card, host.network);
+        addNetworkSection(card, host.network, clientId);
 
         const footer = document.createElement("div");
         footer.className = "host-footer";
@@ -1098,9 +1180,138 @@
             );
 
             if (host) {
-                addNetworkSection(card, host.network);
+                addNetworkSection(card, host.network, clientId);
             }
         });
+    }
+
+    function updateInterfaceMoveButtons() {
+        const rows = [...interfaceConfigList.children];
+        rows.forEach((row, index) => {
+            const up = row.querySelector('[data-move="up"]');
+            const down = row.querySelector('[data-move="down"]');
+            up.disabled = index === 0;
+            down.disabled = index === rows.length - 1;
+        });
+    }
+
+    function openInterfaceSettings(clientId) {
+        const host = currentHosts.find(item => item.client_id === clientId);
+        const interfaces = Array.isArray(host?.network?.interfaces)
+            ? host.network.interfaces
+            : [];
+
+        if (!host || interfaces.length === 0) {
+            return;
+        }
+
+        editingClientId = clientId;
+        const preferences =
+            dashboardConfig.host_interface_preferences?.[clientId] || {};
+        const hidden = new Set(preferences.hidden || []);
+        const ordered = sortInterfaces(interfaces, preferences.order || []);
+
+        interfaceDialogHost.textContent =
+            `${host.hostname} · ${ordered.length} interfaces`;
+        interfaceDialogError.hidden = true;
+        interfaceDialogError.textContent = "";
+        interfaceConfigList.replaceChildren();
+
+        for (const iface of ordered) {
+            const row = document.createElement("div");
+            row.className = "interface-config-row";
+            row.dataset.interfaceName = iface.name || "";
+
+            const label = document.createElement("label");
+            label.className = "interface-config-label";
+
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.checked = !hidden.has(iface.name);
+            checkbox.setAttribute(
+                "aria-label",
+                `Show ${iface.name || "unnamed interface"}`
+            );
+
+            const description = document.createElement("span");
+            const state = iface.is_up === true
+                ? "Up"
+                : iface.is_up === false
+                    ? "Down"
+                    : "State unknown";
+            description.textContent =
+                `${iface.name || "Unnamed interface"} · ${iface.type || "unknown"} · ${state}`;
+
+            label.append(checkbox, description);
+            row.appendChild(label);
+
+            const actions = document.createElement("div");
+            actions.className = "interface-config-actions";
+
+            const up = addText(actions, "button", "small-button", "↑");
+            up.type = "button";
+            up.dataset.move = "up";
+            up.setAttribute("aria-label", `Move ${iface.name} up`);
+            up.addEventListener("click", () => {
+                const previous = row.previousElementSibling;
+                if (previous) {
+                    interfaceConfigList.insertBefore(row, previous);
+                    updateInterfaceMoveButtons();
+                }
+            });
+
+            const down = addText(actions, "button", "small-button", "↓");
+            down.type = "button";
+            down.dataset.move = "down";
+            down.setAttribute("aria-label", `Move ${iface.name} down`);
+            down.addEventListener("click", () => {
+                const next = row.nextElementSibling;
+                if (next) {
+                    interfaceConfigList.insertBefore(next, row);
+                    updateInterfaceMoveButtons();
+                }
+            });
+
+            row.appendChild(actions);
+            interfaceConfigList.appendChild(row);
+        }
+
+        updateInterfaceMoveButtons();
+        interfaceDialogSave.disabled = false;
+        interfaceDialogSave.textContent = "Save preferences";
+        interfaceDialog.showModal();
+    }
+
+    async function saveInterfaceSettings() {
+        if (!editingClientId) {
+            return;
+        }
+
+        const rows = [...interfaceConfigList.children];
+        const order = rows.map(row => row.dataset.interfaceName);
+        const hidden = rows
+            .filter(row => !row.querySelector('input[type="checkbox"]').checked)
+            .map(row => row.dataset.interfaceName);
+
+        interfaceDialogSave.disabled = true;
+        interfaceDialogSave.textContent = "Saving...";
+
+        try {
+            await saveConfigPatch({
+                host_interface_preferences: {
+                    [editingClientId]: { hidden, order }
+                }
+            });
+            interfaceDialog.close();
+            rerenderNetworkSections();
+        } catch (error) {
+            interfaceDialogError.textContent =
+                `Unable to save interface preferences: ${error.message}`;
+            interfaceDialogError.hidden = false;
+        } finally {
+            interfaceDialogSave.disabled = false;
+            interfaceDialogSave.textContent = "Save preferences";
+        }
     }
 
     function showMessage(message, error = false) {
@@ -1125,22 +1336,40 @@
     }
 
     async function loadDashboardConfig() {
-        const selector = document.getElementById("refresh-rate");
+        if (!token) {
+            return true;
+        }
 
         try {
             const response = await fetch(CONFIG_URL, {
                 method: "GET",
-                cache: "no-store",
+                headers: {
+                    "Authorization": `Bearer ${token}`,
+                    "Accept": "application/json"
+                },
+                cache: "no-store"
             });
+
+            if (response.status === 401) {
+                disconnect("Authentication failed. Enter your token again.");
+                return false;
+            }
 
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
             }
 
             const config = await response.json();
+            dashboardConfig = {
+                ...config,
+                host_interface_preferences:
+                    config.host_interface_preferences || {}
+            };
+
             const configuredSeconds = Number(
                 config.dashboard_refresh_seconds
             );
+            const previousSeconds = refreshSeconds;
 
             if (
                 Number.isInteger(configuredSeconds) &&
@@ -1150,18 +1379,79 @@
             } else {
                 refreshSeconds = DEFAULT_REFRESH_SECONDS;
             }
-        } catch (error) {
-            console.warn(
-                "Unable to load dashboard configuration; using the default refresh interval.",
-                error
-            );
 
-            refreshSeconds = DEFAULT_REFRESH_SECONDS;
+            document.getElementById("refresh-rate").value =
+                String(refreshSeconds);
+            updateRefreshLabel();
+
+            if (previousSeconds !== refreshSeconds) {
+                restartRefreshTimer();
+            }
+        } catch (error) {
+            // Keep the last known config and continue showing host telemetry.
+            console.warn("Unable to refresh dashboard configuration.", error);
         }
 
-        selector.value = String(refreshSeconds);
-        updateRefreshLabel();
-        restartRefreshTimer();
+        return true;
+    }
+
+    async function saveConfigPatch(changes) {
+        if (!token) {
+            throw new Error("Connect to Dapper before changing configuration.");
+        }
+
+        const response = await fetch(CONFIG_URL, {
+            method: "PATCH",
+            headers: {
+                "Authorization": `Bearer ${token}`,
+                "Accept": "application/json",
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(changes),
+            cache: "no-store"
+        });
+
+        if (response.status === 401) {
+            disconnect("Authentication failed. Enter your token again.");
+            throw new Error("Authentication failed.");
+        }
+
+        if (!response.ok) {
+            let detail = `HTTP ${response.status}`;
+            try {
+                const errorBody = await response.json();
+                if (errorBody.detail) {
+                    detail = errorBody.detail;
+                }
+            } catch (_) {
+                // Keep the HTTP status as the error detail.
+            }
+            throw new Error(detail);
+        }
+
+        const config = await response.json();
+        dashboardConfig = {
+            ...config,
+            host_interface_preferences:
+                config.host_interface_preferences || {}
+        };
+
+        const configuredSeconds = Number(config.dashboard_refresh_seconds);
+        if (
+            Number.isInteger(configuredSeconds) &&
+            REFRESH_OPTIONS.includes(configuredSeconds)
+        ) {
+            const changed = refreshSeconds !== configuredSeconds;
+            refreshSeconds = configuredSeconds;
+            document.getElementById("refresh-rate").value =
+                String(refreshSeconds);
+            updateRefreshLabel();
+            if (changed) {
+                restartRefreshTimer();
+            }
+        }
+
+        return dashboardConfig;
     }
 
     function restartRefreshTimer() {
@@ -1183,6 +1473,11 @@
         refreshing = true;
 
         try {
+            const configLoaded = await loadDashboardConfig();
+            if (!configLoaded || disconnected || !token) {
+                return;
+            }
+
             const response = await fetch(API_URL, {
                 method: "GET",
                 headers: {
@@ -1282,6 +1577,7 @@
         lastRefresh.textContent = "Authentication required";
 
         currentHosts = [];
+        dashboardConfig = { host_interface_preferences: {} };
         document.getElementById("network-view").value = "primary";
     }
 
@@ -1316,8 +1612,6 @@
         restartRefreshTimer();
     });
 
-    loadDashboardConfig();
-
     document.getElementById("refresh-button")
         .addEventListener("click", refreshHosts);
 
@@ -1329,8 +1623,9 @@
 
     document
         .getElementById("refresh-rate")
-        .addEventListener("change", (event) => {
+        .addEventListener("change", async (event) => {
             const selectedSeconds = Number(event.target.value);
+            const previousSeconds = refreshSeconds;
 
             if (!REFRESH_OPTIONS.includes(selectedSeconds)) {
                 event.target.value = String(refreshSeconds);
@@ -1338,10 +1633,34 @@
             }
 
             refreshSeconds = selectedSeconds;
-
             updateRefreshLabel();
             restartRefreshTimer();
+
+            try {
+                await saveConfigPatch({
+                    dashboard_refresh_seconds: selectedSeconds
+                });
+                showMessage(
+                    "Refresh interval updated for all connected dashboard sessions."
+                );
+            } catch (error) {
+                if (!disconnected) {
+                    refreshSeconds = previousSeconds;
+                    event.target.value = String(previousSeconds);
+                    updateRefreshLabel();
+                    restartRefreshTimer();
+                    showMessage(
+                        `Unable to save refresh interval: ${error.message}`,
+                        true
+                    );
+                }
+            }
         });
+
+    document.getElementById("interface-dialog-cancel")
+        .addEventListener("click", () => interfaceDialog.close());
+
+    interfaceDialogSave.addEventListener("click", saveInterfaceSettings);
 
 })();
 </script>
