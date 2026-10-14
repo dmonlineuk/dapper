@@ -23,7 +23,7 @@ import requests
 
 from functools import lru_cache
 
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 DEFAULT_INTERVAL = 30
 REQUEST_TIMEOUT = 10
 UPDATE_CHECK_INTERVAL_SECONDS = 6 * 60 * 60
@@ -417,7 +417,14 @@ def apt_security_update_status(package_names: set[str]):
     except (OSError, RuntimeError, subprocess.TimeoutExpired):
         return None
 
-    package_blocks = re.split(r"(?m)^Package:\s*", output)[1:]
+    package_blocks = re.split(
+        r"(?m)^(?:Package:\s*\S+|[^\s:][^\n]*:)\s*$",
+        output,
+    )
+    package_blocks = [
+        block for block in package_blocks
+        if re.search(r"(?m)^\s*Candidate:", block)
+    ]
     if not package_blocks:
         return None
 
