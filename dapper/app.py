@@ -81,7 +81,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Dapper API",
-    version="0.4.2",
+    version="0.4.3",
     lifespan=lifespan,
 )
 
@@ -117,6 +117,7 @@ class Telemetry(BaseModel):
     pending_restart: bool | None = None
     metrics: dict[str, Any] = Field(default_factory=dict)
     network: dict[str, Any] = Field(default_factory=dict)
+    storage: dict[str, Any] = Field(default_factory=dict)
 
 
 class InterfacePreferenceUpdate(BaseModel):
@@ -277,6 +278,7 @@ async def receive_telemetry(data: Telemetry):
             "pending_restart": data.pending_restart,
             "metrics": data.metrics,
             "network": data.network,
+            "storage": data.storage,
             "first_seen": previous.get("first_seen", now),
             "last_seen": now,
         }

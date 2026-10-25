@@ -191,7 +191,74 @@
         }
 
         .host-body {
-            padding: 20px;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            padding: 16px;
+        }
+
+        .host-body .metric {
+            min-width: 0;
+            margin: 0;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--panel-raised);
+        }
+
+        .host-body .metric-heading {
+            margin-bottom: 8px;
+        }
+
+        .storage-metrics {
+            grid-column: 1 / -1;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+            gap: 10px;
+        }
+
+        .storage-drive {
+            min-width: 0;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--panel-raised);
+        }
+
+        .storage-drive.warning {
+            border-color: var(--red);
+        }
+
+        .storage-drive-heading {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 8px;
+            font-weight: 700;
+        }
+
+        .storage-drive.warning .storage-drive-heading span:last-child {
+            color: var(--red);
+        }
+
+        .storage-drive-usage {
+            margin-top: 7px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .storage-drive.warning .bar-fill {
+            background: var(--red);
+        }
+
+        @media (max-width: 440px) {
+            .host-body {
+                grid-template-columns: minmax(0, 1fr);
+            }
+
+            .storage-metrics {
+                grid-column: auto;
+            }
         }
 
         .host-details {
@@ -996,6 +1063,56 @@
         );
     }
 
+    function addStorageMetrics(parent, storage) {
+        const drives = Array.isArray(storage?.drives) ? storage.drives : [];
+        if (drives.length === 0) return;
+
+        const section = document.createElement("section");
+        section.className = "storage-metrics";
+
+        for (const drive of drives) {
+            const capacity = drive?.capacity_bytes;
+            const used = drive?.used_bytes;
+            if (
+                typeof capacity !== "number" || !Number.isFinite(capacity) || capacity <= 0 ||
+                typeof used !== "number" || !Number.isFinite(used) || used < 0
+            ) {
+                continue;
+            }
+
+            const percent = Math.min(100, (used / capacity) * 100);
+            const warning = percent >= 95;
+            const card = document.createElement("div");
+            card.className = `storage-drive${warning ? " warning" : ""}`;
+
+            const heading = document.createElement("div");
+            heading.className = "storage-drive-heading";
+            addText(heading, "span", "", drive.mountpoint || "Drive");
+            addText(heading, "span", "", `${percent.toFixed(0)}%`);
+            card.appendChild(heading);
+
+            const bar = document.createElement("div");
+            bar.className = "bar";
+            const fill = document.createElement("div");
+            fill.className = "bar-fill";
+            fill.style.width = `${percent}%`;
+            bar.appendChild(fill);
+            card.appendChild(bar);
+
+            addText(
+                card,
+                "div",
+                "storage-drive-usage",
+                `${formatBytes(used)} used of ${formatBytes(capacity)}`
+            );
+            section.appendChild(card);
+        }
+
+        if (section.childElementCount > 0) {
+            parent.appendChild(section);
+        }
+    }
+
     function formatBytes(value) {
         if (
             typeof value !== "number" ||
@@ -1353,6 +1470,8 @@
                 ).toFixed(1)} GiB`
             );
         }
+
+        addStorageMetrics(body, host.storage);
 
         card.appendChild(body);
 

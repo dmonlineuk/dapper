@@ -23,7 +23,7 @@ import requests
 
 from functools import lru_cache
 
-VERSION = "0.4.5"
+VERSION = "0.4.6"
 DEFAULT_INTERVAL = 30
 REQUEST_TIMEOUT = 10
 UPDATE_CHECK_INTERVAL_SECONDS = 6 * 60 * 60
@@ -412,6 +412,40 @@ def collect_network_telemetry() -> dict:
 
     return {"interfaces": interfaces}
 
+
+def collect_storage_telemetry() -> dict:
+    """Collect capacity and used bytes for mounted local drives."""
+
+    try:
+        partitions = psutil.disk_partitions(all=False)
+    except (OSError, psutil.Error):
+        logger.warning("Unable to collect storage telemetry.")
+        return {"drives": []}
+
+    drives = []
+    seen_mountpoints = set()
+    for partition in partitions:
+        mountpoint = partition.mountpoint
+        if not mountpoint or mountpoint in seen_mountpoints:
+            continue
+        seen_mountpoints.add(mountpoint)
+
+        try:
+            usage = psutil.disk_usage(mountpoint)
+        except (OSError, psutil.Error):
+            continue
+
+        if usage.total <= 0:
+            continue
+
+        drives.append({
+            "mountpoint": mountpoint,
+            "capacity_bytes": usage.total,
+            "used_bytes": usage.used,
+        })
+
+    return {"drives": drives}
+
 def run_update_command(command: list[str], timeout: int = UPDATE_CHECK_TIMEOUT_SECONDS):
     """Run a read-only update query without exposing its output to telemetry."""
 
@@ -656,6 +690,7 @@ def collect_telemetry(client_id: str) -> dict:
             "os_updates": get_os_update_status(),
         },
         "network": collect_network_telemetry(),
+        "storage": collect_storage_telemetry(),
     }
 
 def send_telemetry(
