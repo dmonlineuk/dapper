@@ -51,7 +51,12 @@ hosts_lock = asyncio.Lock()
 # Environment configuration supplies the initial refresh interval.
 dashboard_refresh_seconds = DASHBOARD_REFRESH_SECONDS
 host_interface_preferences: dict[str, dict[str, list[str]]] = {}
+host_storage_preferences: dict[str, dict[str, list[str]]] = {}
 config_lock = asyncio.Lock()
+NETWORK_DETAIL_FIELDS = {
+    "link_speed", "ipv4", "ipv6", "mac_address", "mtu", "duplex",
+    "traffic", "packets", "errors", "drops",
+}
 
 # HTTP bearer authentication.
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -81,7 +86,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Dapper API",
-    version="0.4.3",
+    version="0.4.5",
     lifespan=lifespan,
 )
 
@@ -123,11 +128,19 @@ class Telemetry(BaseModel):
 class InterfacePreferenceUpdate(BaseModel):
     hidden: list[str] | None = None
     order: list[str] | None = None
+    card_visible: list[str] | None = None
+    detail_fields: list[str] | None = None
+
+
+class StoragePreferenceUpdate(BaseModel):
+    card_visible: list[str] | None = None
+    order: list[str] | None = None
 
 
 class ConfigUpdate(BaseModel):
     dashboard_refresh_seconds: int | None = Field(default=None, ge=1, le=60)
     host_interface_preferences: dict[str, InterfacePreferenceUpdate] | None = None
+    host_storage_preferences: dict[str, StoragePreferenceUpdate] | None = None
 
 
 def config_snapshot() -> dict[str, Any]:
@@ -137,11 +150,12 @@ def config_snapshot() -> dict[str, Any]:
         "min_dashboard_refresh_seconds": MIN_DASHBOARD_REFRESH_SECONDS,
         "max_dashboard_refresh_seconds": MAX_DASHBOARD_REFRESH_SECONDS,
         "host_interface_preferences": {
-            client_id: {
-                "hidden": list(preference.get("hidden", [])),
-                "order": list(preference.get("order", [])),
-            }
+            client_id: {key: list(values) for key, values in preference.items()}
             for client_id, preference in host_interface_preferences.items()
+        },
+        "host_storage_preferences": {
+            client_id: {key: list(values) for key, values in preference.items()}
+            for client_id, preference in host_storage_preferences.items()
         },
     }
 
@@ -173,59 +187,85 @@ async def patch_config(update: ConfigUpdate):
     global dashboard_refresh_seconds
 
     update_data = update.dict(exclude_unset=True)
-    preference_updates = update_data.get("host_interface_preferences")
+    preference_updates = update_data.get("host_interface_preferences") or {}
+    storage_updates = update_data.get("host_storage_preferences") or {}
     validated_updates: dict[str, dict[str, list[str] | None]] = {}
+    validated_storage: dict[str, dict[str, list[str] | None]] = {}
 
-    if preference_updates is not None:
-        for supplied_client_id, preference_update in preference_updates.items():
-            try:
-                client_id = str(UUID(supplied_client_id))
-            except (ValueError, TypeError, AttributeError) as exc:
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Invalid client ID: {supplied_client_id}",
-                ) from exc
+    for supplied_client_id, preference_update in preference_updates.items():
+        try:
+            client_id = str(UUID(supplied_client_id))
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid client ID: {supplied_client_id}") from exc
 
-            async with hosts_lock:
-                host = hosts.get(client_id)
-                if host is None:
-                    raise HTTPException(
-                        status_code=404,
-                        detail=f"Unknown host: {client_id}",
-                    )
-                network = host.get("network") or {}
-                interfaces = network.get("interfaces") or []
-                known_names = {
-                    item.get("name")
-                    for item in interfaces
-                    if isinstance(item, dict) and isinstance(item.get("name"), str)
-                }
+        async with hosts_lock:
+            host = hosts.get(client_id)
+            if host is None:
+                raise HTTPException(status_code=404, detail=f"Unknown host: {client_id}")
+            interfaces = (host.get("network") or {}).get("interfaces") or []
+            known_names = {
+                item.get("name") for item in interfaces
+                if isinstance(item, dict) and isinstance(item.get("name"), str)
+            }
 
-            fields = preference_update if isinstance(preference_update, dict) else preference_update.dict(exclude_unset=True)
-            for field_name in ("hidden", "order"):
-                names = fields.get(field_name)
-                if names is None:
-                    continue
-                if any(not isinstance(name, str) or not name for name in names):
-                    raise HTTPException(
-                        status_code=422,
-                        detail=f"{field_name} must contain non-empty interface names",
-                    )
-                if len(names) != len(set(names)):
-                    raise HTTPException(
-                        status_code=422,
-                        detail=f"{field_name} must not contain duplicate interface names",
-                    )
-                unknown_names = sorted(set(names) - known_names)
-                if unknown_names:
-                    raise HTTPException(
-                        status_code=422,
-                        detail=(
-                            f"Unknown interface name(s) for {client_id}: "
-                            + ", ".join(unknown_names)
-                        ),
-                    )
-            validated_updates[client_id] = fields
+        fields = (
+            preference_update
+            if isinstance(preference_update, dict)
+            else preference_update.dict(exclude_unset=True)
+        )
+        for field_name in ("hidden", "order", "card_visible"):
+            names = fields.get(field_name)
+            if names is None:
+                continue
+            if any(not isinstance(name, str) or not name for name in names):
+                raise HTTPException(status_code=422, detail=f"{field_name} must contain non-empty interface names")
+            if len(names) != len(set(names)):
+                raise HTTPException(status_code=422, detail=f"{field_name} must not contain duplicate interface names")
+            unknown_names = sorted(set(names) - known_names)
+            if unknown_names:
+                raise HTTPException(status_code=422, detail=f"Unknown interface name(s) for {client_id}: " + ", ".join(unknown_names))
+        detail_fields = fields.get("detail_fields")
+        if detail_fields is not None:
+            if len(detail_fields) != len(set(detail_fields)):
+                raise HTTPException(status_code=422, detail="detail_fields must not contain duplicates")
+            unknown_fields = sorted(set(detail_fields) - NETWORK_DETAIL_FIELDS)
+            if unknown_fields:
+                raise HTTPException(status_code=422, detail="Unsupported network detail field(s): " + ", ".join(unknown_fields))
+        validated_updates[client_id] = fields
+
+    for supplied_client_id, preference_update in storage_updates.items():
+        try:
+            client_id = str(UUID(supplied_client_id))
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid client ID: {supplied_client_id}") from exc
+
+        async with hosts_lock:
+            host = hosts.get(client_id)
+            if host is None:
+                raise HTTPException(status_code=404, detail=f"Unknown host: {client_id}")
+            drives = (host.get("storage") or {}).get("drives") or []
+            known_mountpoints = {
+                item.get("mountpoint") for item in drives
+                if isinstance(item, dict) and isinstance(item.get("mountpoint"), str)
+            }
+
+        fields = (
+            preference_update
+            if isinstance(preference_update, dict)
+            else preference_update.dict(exclude_unset=True)
+        )
+        for field_name in ("card_visible", "order"):
+            names = fields.get(field_name)
+            if names is None:
+                continue
+            if any(not isinstance(name, str) or not name for name in names):
+                raise HTTPException(status_code=422, detail=f"{field_name} must contain non-empty drive mount points")
+            if len(names) != len(set(names)):
+                raise HTTPException(status_code=422, detail=f"{field_name} must not contain duplicate drive mount points")
+            unknown_names = sorted(set(names) - known_mountpoints)
+            if unknown_names:
+                raise HTTPException(status_code=422, detail=f"Unknown drive mount point(s) for {client_id}: " + ", ".join(unknown_names))
+        validated_storage[client_id] = fields
 
     async with config_lock:
         new_refresh = update_data.get("dashboard_refresh_seconds")
@@ -233,22 +273,32 @@ async def patch_config(update: ConfigUpdate):
             dashboard_refresh_seconds = new_refresh
 
         for client_id, fields in validated_updates.items():
-            existing = host_interface_preferences.get(
-                client_id,
-                {"hidden": [], "order": []},
-            )
             merged = {
-                "hidden": list(existing.get("hidden", [])),
-                "order": list(existing.get("order", [])),
+                key: list(values)
+                for key, values in host_interface_preferences.get(client_id, {}).items()
             }
-            for field_name in ("hidden", "order"):
+            for field_name in ("hidden", "order", "card_visible", "detail_fields"):
                 if field_name in fields and fields[field_name] is not None:
                     merged[field_name] = list(fields[field_name])
 
-            if not merged["hidden"] and not merged["order"]:
+            if not merged:
                 host_interface_preferences.pop(client_id, None)
             else:
                 host_interface_preferences[client_id] = merged
+
+        for client_id, fields in validated_storage.items():
+            merged = {
+                key: list(values)
+                for key, values in host_storage_preferences.get(client_id, {}).items()
+            }
+            for field_name in ("card_visible", "order"):
+                if field_name in fields and fields[field_name] is not None:
+                    merged[field_name] = list(fields[field_name])
+
+            if not merged:
+                host_storage_preferences.pop(client_id, None)
+            else:
+                host_storage_preferences[client_id] = merged
 
         return config_snapshot()
 

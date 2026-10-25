@@ -192,26 +192,155 @@
 
         .host-body {
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 12px;
-            padding: 16px;
+            gap: 10px;
+            padding: 14px 16px;
         }
 
-        .host-body .metric {
+        .node-panel {
             min-width: 0;
-            margin: 0;
             padding: 12px;
             border: 1px solid var(--border);
             border-radius: 8px;
             background: var(--panel-raised);
         }
 
-        .host-body .metric-heading {
-            margin-bottom: 8px;
+        .cpu-overview {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(110px, 1fr);
+            gap: 18px;
+            align-items: center;
+        }
+
+        .cpu-heading, .node-panel-heading, .memory-heading {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 10px;
+        }
+
+        .cpu-heading strong, .memory-heading strong {
+            font-variant-numeric: tabular-nums;
+        }
+
+        .cpu-core-bars {
+            height: 48px;
+            display: grid;
+            grid-template-columns: repeat(16, minmax(4px, 1fr));
+            align-items: end;
+            gap: 4px;
+        }
+
+        .cpu-core-bar-wrap {
+            height: 48px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 3px;
+            min-width: 0;
+        }
+
+        .cpu-core-bar {
+            width: 100%;
+            min-height: 2px;
+            background: var(--accent);
+            border-radius: 2px 2px 0 0;
+        }
+
+        .cpu-core-number {
+            color: var(--muted);
+            font-size: 9px;
+            line-height: 1;
+        }
+
+        .memory-overview {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 14px;
+            align-items: center;
+        }
+
+        .memory-total {
+            max-width: 100px;
+            color: var(--muted);
+        }
+
+        .memory-total strong {
+            display: block;
+            color: var(--text);
+            text-align: right;
+        }
+
+        .status-overview {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .status-item-label {
+            color: var(--muted);
+            margin-bottom: 5px;
+        }
+
+        .status-item-value {
+            font-weight: 700;
+            overflow-wrap: anywhere;
+        }
+
+        .status-item-value.warning {
+            color: var(--red);
+        }
+
+        .node-panel-heading {
+            margin-bottom: 10px;
+            color: var(--muted);
+            font-weight: 650;
+        }
+
+        .network-live-list {
+            display: grid;
+            gap: 8px;
+        }
+
+        .network-live-item {
+            padding: 9px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+        }
+
+        .network-live-title {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 7px;
+            font-weight: 700;
+        }
+
+        .network-live-fields {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 5px 10px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .node-section-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .icon-button {
+            min-width: 32px;
+            padding: 4px 7px;
+            font-size: 16px;
+            line-height: 1.1;
+        }
+
+        .node-panel .metric {
+            margin: 0;
         }
 
         .storage-metrics {
-            grid-column: 1 / -1;
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
             gap: 10px;
@@ -251,13 +380,24 @@
             background: var(--red);
         }
 
+        .storage-section-heading {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            color: var(--muted);
+            font-weight: 650;
+        }
+
         @media (max-width: 440px) {
-            .host-body {
+            .cpu-overview {
                 grid-template-columns: minmax(0, 1fr);
+                gap: 10px;
             }
 
-            .storage-metrics {
-                grid-column: auto;
+            .status-overview {
+                grid-template-columns: minmax(0, 1fr);
             }
         }
 
@@ -563,6 +703,33 @@
             overflow-wrap: anywhere;
         }
 
+        .config-row-labels {
+            display: grid;
+            gap: 7px;
+        }
+
+        .config-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .interface-field-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 8px;
+            margin: 20px 0;
+        }
+
+        .interface-field-row {
+            padding: 9px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--panel-raised);
+        }
+
         .interface-config-actions {
             display: flex;
             gap: 5px;
@@ -725,14 +892,6 @@
             <h2>Clients</h2>
 
             <div class="toolbar">
-                <label for="network-view" class="muted">Network</label>
-
-                <select id="network-view" class="small-select">
-                    <option value="primary">Primary only</option>
-                    <option value="physical">Physical adapters</option>
-                    <option value="all">All interfaces</option>
-                </select>
-
                 <label for="refresh-rate" class="muted">
                     Refresh:
                 </label>
@@ -770,10 +929,11 @@
     </section>
 
     <dialog id="interface-dialog" class="interface-dialog" aria-labelledby="interface-dialog-title">
-        <h2 id="interface-dialog-title">Configure network interfaces</h2>
+        <h2 id="interface-dialog-title">Configure node details</h2>
         <p id="interface-dialog-host" class="muted"></p>
-        <p class="muted">Unchecked interfaces remain collected by the agent but are hidden on the dashboard. Changes are shared across browsers and reset when the server restarts.</p>
+        <p id="interface-dialog-description" class="muted"></p>
         <div id="interface-config-list" class="interface-config-list"></div>
+        <div id="interface-field-list" class="interface-field-list"></div>
         <div id="interface-dialog-error" class="message error interface-dialog-error" hidden></div>
         <div class="interface-dialog-actions">
             <button id="interface-dialog-cancel" class="small-button" type="button">Cancel</button>
@@ -798,6 +958,18 @@
     const DEFAULT_REFRESH_SECONDS = 10;
 
     const REFRESH_OPTIONS = [1, 2, 5, 10, 15, 30, 60];
+    const NETWORK_DETAIL_OPTIONS = [
+        ["link_speed", "Link speed"],
+        ["ipv4", "IPv4 addresses"],
+        ["ipv6", "IPv6 addresses"],
+        ["mac_address", "MAC address"],
+        ["mtu", "MTU"],
+        ["duplex", "Duplex"],
+        ["traffic", "Bytes received / sent"],
+        ["packets", "Packets in / out"],
+        ["errors", "Errors in / out"],
+        ["drops", "Drops in / out"]
+    ];
 
     const CONFIG_URL = "/api/v1/config";
     const API_URL = "/api/v1/hosts";
@@ -814,8 +986,11 @@
     const connectionStatus = document.getElementById("connection-status");
     const lastRefresh = document.getElementById("last-refresh");
     const interfaceDialog = document.getElementById("interface-dialog");
+    const interfaceDialogTitle = document.getElementById("interface-dialog-title");
     const interfaceDialogHost = document.getElementById("interface-dialog-host");
+    const interfaceDialogDescription = document.getElementById("interface-dialog-description");
     const interfaceConfigList = document.getElementById("interface-config-list");
+    const interfaceFieldList = document.getElementById("interface-field-list");
     const interfaceDialogError = document.getElementById("interface-dialog-error");
     const interfaceDialogSave = document.getElementById("interface-dialog-save");
     const detailsDialog = document.getElementById("details-dialog");
@@ -830,8 +1005,9 @@
     let currentHosts = [];
 
     let refreshSeconds = DEFAULT_REFRESH_SECONDS;
-    let dashboardConfig = { host_interface_preferences: {} };
+    let dashboardConfig = { host_interface_preferences: {}, host_storage_preferences: {} };
     let editingClientId = null;
+    let editingPreferenceType = null;
     let activeDetails = null;
 
     function formatDuration(seconds) {
@@ -1018,7 +1194,7 @@
         parent.appendChild(content);
     }
 
-    function addOsUpdateDetails(parent, updates) {
+    function updateSummary(updates) {
         if (!updates || typeof updates !== "object" || Array.isArray(updates)) {
             updates = {};
         }
@@ -1051,46 +1227,101 @@
             securityStatus = "Checking";
         }
 
-        const updateSummary = updateCount === "None"
-            ? "Up to date"
-            : `${updateCount} · security ${securityStatus.toLowerCase()}`;
-        addMetric(
-            parent,
-            "Updates",
-            updateSummary,
-            null,
-            updates.security_available === true ? "update-security-warning" : ""
-        );
+        return {
+            text: updateCount === "None"
+                ? "Up to date"
+                : `${updateCount} · security ${securityStatus.toLowerCase()}`,
+            warning: updates.security_available === true
+        };
     }
 
-    function addStorageMetrics(parent, storage) {
-        const drives = Array.isArray(storage?.drives) ? storage.drives : [];
-        if (drives.length === 0) return;
+    function addStatusItem(parent, label, value, warning = false) {
+        const item = document.createElement("div");
+        addText(item, "div", "status-item-label", label);
+        addText(item, "div", `status-item-value${warning ? " warning" : ""}`, value);
+        parent.appendChild(item);
+    }
 
+    function addStorageMetrics(parent, host) {
+        const drives = Array.isArray(host.storage?.drives) ? host.storage.drives : [];
+        const visibleDrives = selectCardDrives(host);
         const section = document.createElement("section");
-        section.className = "storage-metrics";
+        section.className = "node-panel storage-section";
 
-        for (const drive of drives) {
-            const capacity = drive?.capacity_bytes;
-            const used = drive?.used_bytes;
-            if (
-                typeof capacity !== "number" || !Number.isFinite(capacity) || capacity <= 0 ||
-                typeof used !== "number" || !Number.isFinite(used) || used < 0
-            ) {
-                continue;
+        const heading = document.createElement("div");
+        heading.className = "storage-section-heading";
+        addText(heading, "span", "", "Drive mounts");
+        const actions = document.createElement("div");
+        actions.className = "node-section-actions";
+        if (drives.length > 0) {
+            const detailButton = addText(actions, "button", "small-button", "Drives");
+            detailButton.type = "button";
+            detailButton.addEventListener("click", () => openDetails("storage", host.client_id));
+            const settingsButton = addText(actions, "button", "small-button icon-button", "⚙");
+            settingsButton.type = "button";
+            settingsButton.title = `Configure live drives for ${host.hostname}`;
+            settingsButton.setAttribute("aria-label", settingsButton.title);
+            settingsButton.addEventListener("click", () => openPreferenceSettings("storage", host.client_id));
+        }
+        heading.appendChild(actions);
+        section.appendChild(heading);
+
+        if (drives.length === 0) {
+            addText(section, "div", "muted", "Storage telemetry unavailable");
+        } else if (visibleDrives.length === 0) {
+            addText(section, "div", "muted", "No drives selected for live monitoring");
+        } else {
+            const list = document.createElement("div");
+            list.className = "storage-metrics";
+            for (const drive of visibleDrives) {
+                const capacity = drive?.capacity_bytes;
+                const used = drive?.used_bytes;
+                if (typeof capacity !== "number" || !Number.isFinite(capacity) || capacity <= 0 ||
+                    typeof used !== "number" || !Number.isFinite(used) || used < 0) continue;
+
+                const percent = Math.min(100, (used / capacity) * 100);
+                const card = document.createElement("div");
+                card.className = `storage-drive${percent >= 95 ? " warning" : ""}`;
+                const driveHeading = document.createElement("div");
+                driveHeading.className = "storage-drive-heading";
+                addText(driveHeading, "span", "", drive.mountpoint || "Drive");
+                addText(driveHeading, "span", "", `${percent.toFixed(0)}%`);
+                card.appendChild(driveHeading);
+                const bar = document.createElement("div");
+                bar.className = "bar";
+                const fill = document.createElement("div");
+                fill.className = "bar-fill";
+                fill.style.width = `${percent}%`;
+                bar.appendChild(fill);
+                card.appendChild(bar);
+                addText(card, "div", "storage-drive-usage", `${formatBytes(used)} used of ${formatBytes(capacity)}`);
+                list.appendChild(card);
             }
+            section.appendChild(list);
+        }
 
+        parent.appendChild(section);
+    }
+
+    function addStorageDetails(parent, host) {
+        const drives = sortDrives(
+            Array.isArray(host.storage?.drives) ? host.storage.drives : [],
+            dashboardConfig.host_storage_preferences?.[host.client_id]?.order || []
+        );
+        const section = document.createElement("div");
+        section.className = "storage-metrics";
+        for (const drive of drives) {
+            const capacity = drive.capacity_bytes;
+            const used = drive.used_bytes;
+            if (typeof capacity !== "number" || capacity <= 0 || typeof used !== "number" || used < 0) continue;
             const percent = Math.min(100, (used / capacity) * 100);
-            const warning = percent >= 95;
             const card = document.createElement("div");
-            card.className = `storage-drive${warning ? " warning" : ""}`;
-
+            card.className = `storage-drive${percent >= 95 ? " warning" : ""}`;
             const heading = document.createElement("div");
             heading.className = "storage-drive-heading";
             addText(heading, "span", "", drive.mountpoint || "Drive");
-            addText(heading, "span", "", `${percent.toFixed(0)}%`);
+            addText(heading, "span", "", `${percent.toFixed(1)}%`);
             card.appendChild(heading);
-
             const bar = document.createElement("div");
             bar.className = "bar";
             const fill = document.createElement("div");
@@ -1098,19 +1329,10 @@
             fill.style.width = `${percent}%`;
             bar.appendChild(fill);
             card.appendChild(bar);
-
-            addText(
-                card,
-                "div",
-                "storage-drive-usage",
-                `${formatBytes(used)} used of ${formatBytes(capacity)}`
-            );
+            addText(card, "div", "storage-drive-usage", `${formatBytes(used)} used of ${formatBytes(capacity)}`);
             section.appendChild(card);
         }
-
-        if (section.childElementCount > 0) {
-            parent.appendChild(section);
-        }
+        parent.appendChild(section);
     }
 
     function formatBytes(value) {
@@ -1221,49 +1443,84 @@
         });
     }
 
-    function selectInterfaces(interfaces, view, clientId) {
+    function selectInterfaces(interfaces, clientId, includeHidden = false) {
         const preferences =
             dashboardConfig.host_interface_preferences?.[clientId] || {};
         const hidden = new Set(preferences.hidden || []);
-        const visible = interfaces.filter(iface => !hidden.has(iface.name));
-        const sorted = sortInterfaces(visible, preferences.order || []);
+        const visible = includeHidden
+            ? interfaces
+            : interfaces.filter(iface => !hidden.has(iface.name));
+        return sortInterfaces(visible, preferences.order || []);
+    }
 
-        if (view === "all") {
-            return sorted;
-        }
-
-        if (view === "physical") {
-            return sorted.filter(iface => {
-                const type = (iface.type || "").toLowerCase();
-                return type === "ethernet" || type === "wifi";
-            });
-        }
-
-        // Primary view: highest-priority visible physical adapter.
+    function defaultCardInterfaces(interfaces) {
+        const sorted = sortInterfaces(interfaces);
         const physical = sorted.filter(iface => {
             const type = (iface.type || "").toLowerCase();
             return type === "ethernet" || type === "wifi";
         });
-
         if (physical.length > 0) {
-            const active = physical.find(iface => iface.is_up === true);
-            return [active || physical[0]];
+            return [(physical.find(iface => iface.is_up === true) || physical[0]).name];
         }
+        return sorted.length > 0 ? [sorted[0].name] : [];
+    }
 
-        // Hosts with only virtual/bridge/unknown adapters still show one.
-        return sorted.length > 0 ? [sorted[0]] : [];
+    function selectCardInterfaces(host) {
+        const all = Array.isArray(host.network?.interfaces)
+            ? host.network.interfaces
+            : [];
+        const preferences = dashboardConfig.host_interface_preferences?.[host.client_id] || {};
+        const selected = new Set(
+            Array.isArray(preferences.card_visible)
+                ? preferences.card_visible
+                : defaultCardInterfaces(selectInterfaces(all, host.client_id))
+        );
+        return selectInterfaces(all, host.client_id)
+            .filter(iface => selected.has(iface.name));
+    }
+
+    function sortDrives(drives, preferredOrder = []) {
+        const orderIndex = new Map(preferredOrder.map((name, index) => [name, index]));
+        return [...drives].sort((a, b) => {
+            const aIndex = orderIndex.has(a.mountpoint) ? orderIndex.get(a.mountpoint) : Number.MAX_SAFE_INTEGER;
+            const bIndex = orderIndex.has(b.mountpoint) ? orderIndex.get(b.mountpoint) : Number.MAX_SAFE_INTEGER;
+            return aIndex === bIndex
+                ? (a.mountpoint || "").localeCompare(b.mountpoint || "")
+                : aIndex - bIndex;
+        });
+    }
+
+    function selectCardDrives(host) {
+        const drives = Array.isArray(host.storage?.drives) ? host.storage.drives : [];
+        const preferences = dashboardConfig.host_storage_preferences?.[host.client_id] || {};
+        const selected = new Set(
+            Array.isArray(preferences.card_visible)
+                ? preferences.card_visible
+                : defaultCardDrives(drives)
+        );
+        return sortDrives(drives, preferences.order || [])
+            .filter(drive => selected.has(drive.mountpoint));
+    }
+
+    function defaultCardDrives(drives) {
+        const sorted = sortDrives(drives);
+        const primary = sorted.find(drive => drive.mountpoint === "/") ||
+            sorted.find(drive => /^[A-Za-z]:\\$/.test(drive.mountpoint || ""));
+        return [primary || sorted[0]].filter(Boolean).map(drive => drive.mountpoint);
+    }
+
+    function selectedNetworkDetailFields(clientId) {
+        const configured = dashboardConfig.host_interface_preferences?.[clientId]?.detail_fields;
+        return new Set(Array.isArray(configured)
+            ? configured
+            : NETWORK_DETAIL_OPTIONS.map(([key]) => key));
     }
 
     function addNetworkSection(parent, network, clientId) {
         const allInterfaces = Array.isArray(network?.interfaces)
             ? network.interfaces
             : [];
-
-        const interfaces = selectInterfaces(
-            allInterfaces,
-            document.getElementById("network-view").value,
-            clientId
-        );
+        const interfaces = selectInterfaces(allInterfaces, clientId);
 
         if (allInterfaces.length === 0) {
             return;
@@ -1276,20 +1533,7 @@
         const content = document.createElement("div");
         content.className = "host-details-content";
 
-        const configureButton = addText(
-            content,
-            "button",
-            "small-button",
-            "Configure"
-        );
-        configureButton.type = "button";
-        configureButton.setAttribute(
-            "aria-label",
-            `Configure network interfaces for ${clientId}`
-        );
-        configureButton.addEventListener("click", () => {
-            openInterfaceSettings(clientId);
-        });
+        const detailFields = selectedNetworkDetailFields(clientId);
 
         for (const iface of interfaces) {
             const panel = document.createElement("div");
@@ -1322,39 +1566,21 @@
 
             const details = document.createElement("div");
             details.className = "interface-detail";
-
-            addInterfaceDetail(details, "Link speed", formatLinkSpeed(iface.link_speed_mbps));
-            addInterfaceDetail(
-                details,
-                "IPv4",
-                Array.isArray(iface.ipv4_addresses)
-                    ? iface.ipv4_addresses.join(", ")
-                    : null
-            );
-            addInterfaceDetail(
-                details,
-                "IPv6",
-                Array.isArray(iface.ipv6_addresses)
-                    ? iface.ipv6_addresses.join(", ")
-                    : null
-            );
-            addInterfaceDetail(details, "MAC address", iface.mac_address);
-            addInterfaceDetail(details, "MTU", iface.mtu);
-            addInterfaceDetail(details, "Duplex", iface.duplex);
-            addInterfaceDetail(details, "Received", formatBytes(iface.bytes_received));
-            addInterfaceDetail(details, "Sent", formatBytes(iface.bytes_sent));
-            addInterfaceDetail(details, "Packets in", iface.packets_received);
-            addInterfaceDetail(details, "Packets out", iface.packets_sent);
-            addInterfaceDetail(
-                details,
-                "Errors in / out",
-                `${iface.errors_in ?? "—"} / ${iface.errors_out ?? "—"}`
-            );
-            addInterfaceDetail(
-                details,
-                "Drops in / out",
-                `${iface.drops_in ?? "—"} / ${iface.drops_out ?? "—"}`
-            );
+            const values = {
+                link_speed: ["Link speed", formatLinkSpeed(iface.link_speed_mbps)],
+                ipv4: ["IPv4", Array.isArray(iface.ipv4_addresses) ? iface.ipv4_addresses.join(", ") : null],
+                ipv6: ["IPv6", Array.isArray(iface.ipv6_addresses) ? iface.ipv6_addresses.join(", ") : null],
+                mac_address: ["MAC address", iface.mac_address],
+                mtu: ["MTU", iface.mtu],
+                duplex: ["Duplex", iface.duplex],
+                traffic: ["Received / sent", `${formatBytes(iface.bytes_received)} / ${formatBytes(iface.bytes_sent)}`],
+                packets: ["Packets in / out", `${iface.packets_received ?? "—"} / ${iface.packets_sent ?? "—"}`],
+                errors: ["Errors in / out", `${iface.errors_in ?? "—"} / ${iface.errors_out ?? "—"}`],
+                drops: ["Drops in / out", `${iface.drops_in ?? "—"} / ${iface.drops_out ?? "—"}`]
+            };
+            for (const [key, [label, value]] of Object.entries(values)) {
+                if (detailFields.has(key)) addInterfaceDetail(details, label, value);
+            }
 
             panel.appendChild(details);
             content.appendChild(panel);
@@ -1362,6 +1588,54 @@
 
         section.appendChild(content);
 
+        parent.appendChild(section);
+    }
+
+    function addNetworkPreview(parent, host) {
+        const all = Array.isArray(host.network?.interfaces) ? host.network.interfaces : [];
+        const section = document.createElement("section");
+        section.className = "node-panel network-section";
+        const heading = document.createElement("div");
+        heading.className = "node-panel-heading";
+        addText(heading, "span", "", "Network adapters");
+        const actions = document.createElement("div");
+        actions.className = "node-section-actions";
+        if (all.length > 0) {
+            const detailButton = addText(actions, "button", "small-button", "Details");
+            detailButton.type = "button";
+            detailButton.addEventListener("click", () => openDetails("network", host.client_id));
+            const settingsButton = addText(actions, "button", "small-button icon-button", "⚙");
+            settingsButton.type = "button";
+            settingsButton.title = `Configure network adapters for ${host.hostname}`;
+            settingsButton.setAttribute("aria-label", settingsButton.title);
+            settingsButton.addEventListener("click", () => openPreferenceSettings("network", host.client_id));
+        }
+        heading.appendChild(actions);
+        section.appendChild(heading);
+
+        const selected = selectCardInterfaces(host);
+        if (selected.length === 0) {
+            addText(section, "div", "muted", all.length ? "No adapters selected for live display" : "Network telemetry unavailable");
+        } else {
+            const list = document.createElement("div");
+            list.className = "network-live-list";
+            for (const iface of selected) {
+                const item = document.createElement("div");
+                item.className = "network-live-item";
+                const title = document.createElement("div");
+                title.className = "network-live-title";
+                addText(title, "span", "", iface.name || "Unknown interface");
+                addText(title, "span", "muted", `${iface.type || "unknown"} · ${iface.is_up === true ? "Up" : iface.is_up === false ? "Down" : "State unknown"}`);
+                item.appendChild(title);
+                const fields = document.createElement("div");
+                fields.className = "network-live-fields";
+                addText(fields, "span", "", `Link speed · ${formatLinkSpeed(iface.link_speed_mbps)}`);
+                addText(fields, "span", "", `IPv4 · ${Array.isArray(iface.ipv4_addresses) && iface.ipv4_addresses.length ? iface.ipv4_addresses.join(", ") : "Unavailable"}`);
+                item.appendChild(fields);
+                list.appendChild(item);
+            }
+            section.appendChild(list);
+        }
         parent.appendChild(section);
     }
 
@@ -1410,93 +1684,91 @@
 
         const body = document.createElement("div");
         body.className = "host-body";
-
         const metrics = host.metrics || {};
 
-        addMetric(
-            body,
-            "CPU utilisation",
-            formatPercent(metrics.cpu_percent),
-            metrics.cpu_percent
-        );
+        const cpu = document.createElement("section");
+        cpu.className = "node-panel cpu-overview";
+        const cpuOverall = document.createElement("div");
+        cpuOverall.className = "cpu-overall-area";
+        addMetric(cpuOverall, "CPU utilisation", formatPercent(metrics.cpu_percent), metrics.cpu_percent);
+        cpu.appendChild(cpuOverall);
 
-        addMetric(
-            body,
-            "Memory utilisation",
-            formatPercent(metrics.memory_percent),
-            metrics.memory_percent
-        );
+        const percentages = Array.isArray(metrics.cpu_per_core_percent)
+            ? metrics.cpu_per_core_percent
+            : [];
+        if (percentages.length > 0) {
+            const cores = document.createElement("div");
+            const coreCountLabel = metrics.cpu_logical_count || percentages.length;
+            const heading = document.createElement("div");
+            heading.className = "cpu-heading";
+            addText(heading, "span", "muted", `${coreCountLabel} logical cores`);
+            if (percentages.length > 16) {
+                const more = addText(heading, "button", "small-button", "Details");
+                more.type = "button";
+                more.addEventListener("click", () => openDetails("cpu", clientId));
+            }
+            cores.appendChild(heading);
 
+            const coreBars = document.createElement("div");
+            coreBars.className = "cpu-core-bars";
+            coreBars.style.gridTemplateColumns = `repeat(${Math.min(16, percentages.length)}, minmax(4px, 1fr))`;
+            percentages.slice(0, 16).forEach((percentage, index) => {
+                const wrap = document.createElement("div");
+                wrap.className = "cpu-core-bar-wrap";
+                const bar = document.createElement("div");
+                bar.className = "cpu-core-bar";
+                const valid = typeof percentage === "number" && Number.isFinite(percentage);
+                bar.style.height = `${valid ? Math.max(2, Math.min(36, 36 * percentage / 100)) : 2}px`;
+                bar.title = `CPU ${index + 1}: ${formatPercent(percentage)}`;
+                bar.setAttribute("aria-label", bar.title);
+                wrap.appendChild(bar);
+                addText(wrap, "span", "cpu-core-number", String(index + 1));
+                coreBars.appendChild(wrap);
+            });
+            cores.appendChild(coreBars);
+            cpu.appendChild(cores);
+        } else {
+            addText(cpu, "div", "muted", "Per-core usage unavailable");
+        }
+        body.appendChild(cpu);
+
+        const memory = document.createElement("section");
+        memory.className = "node-panel memory-overview";
+        const memoryUsage = document.createElement("div");
+        addMetric(memoryUsage, "Memory utilisation", formatPercent(metrics.memory_percent), metrics.memory_percent);
+        memory.appendChild(memoryUsage);
+        const memoryTotal = document.createElement("div");
+        memoryTotal.className = "memory-total";
+        addText(memoryTotal, "span", "", "Installed memory");
+        addText(
+            memoryTotal,
+            "strong",
+            "",
+            typeof metrics.memory_total_bytes === "number" && Number.isFinite(metrics.memory_total_bytes)
+                ? `${(metrics.memory_total_bytes / (1024 ** 3)).toFixed(1)} GiB`
+                : "Unavailable"
+        );
+        memory.appendChild(memoryTotal);
+        body.appendChild(memory);
+
+        const statusPanel = document.createElement("section");
+        statusPanel.className = "node-panel status-overview";
         const uptimeSeconds = host.uptime_seconds;
-        const uptimeWarning =
-            typeof uptimeSeconds === "number" &&
-            Number.isFinite(uptimeSeconds) &&
-            uptimeSeconds > 30 * 24 * 60 * 60;
-
-        addMetric(
-            body,
-            "System uptime",
-            formatDuration(uptimeSeconds),
-            null,
-            uptimeWarning ? "uptime-warning" : ""
-        );
-
-        addOsUpdateDetails(body, metrics.os_updates);
-
-        const restartStatus = host.pending_restart;
-        addMetric(
-            body,
+        const uptimeWarning = typeof uptimeSeconds === "number" && Number.isFinite(uptimeSeconds) && uptimeSeconds > 30 * 24 * 60 * 60;
+        addStatusItem(statusPanel, "System uptime", formatDuration(uptimeSeconds), uptimeWarning);
+        const updates = updateSummary(metrics.os_updates);
+        addStatusItem(statusPanel, "Updates", updates.text, updates.warning);
+        addStatusItem(
+            statusPanel,
             "Pending restart",
-            restartStatus === true
-                ? "Required"
-                : restartStatus === false
-                    ? "No"
-                    : "Unknown",
-            null,
-            restartStatus === true ? "restart-warning" : ""
+            host.pending_restart === true ? "Required" : host.pending_restart === false ? "No" : "Unknown",
+            host.pending_restart === true
         );
+        body.appendChild(statusPanel);
 
-        if (
-            typeof metrics.memory_total_bytes === "number" &&
-            Number.isFinite(metrics.memory_total_bytes) &&
-            metrics.memory_total_bytes >= 0
-        ) {
-            addMetric(
-                body,
-                "Installed memory",
-                `${(
-                    metrics.memory_total_bytes /
-                    (1024 ** 3)
-                ).toFixed(1)} GiB`
-            );
-        }
-
-        addStorageMetrics(body, host.storage);
-
+        addNetworkPreview(body, host);
+        addStorageMetrics(body, host);
         card.appendChild(body);
-
-        const detailButtons = document.createElement("div");
-        detailButtons.className = "detail-buttons";
-        const hasCpuDetails =
-            (Number.isInteger(metrics.cpu_core_count) && metrics.cpu_core_count > 0) ||
-            (Number.isInteger(metrics.cpu_logical_count) && metrics.cpu_logical_count > 0) ||
-            (Array.isArray(metrics.cpu_per_core_percent) && metrics.cpu_per_core_percent.length > 0);
-        const hasNetworkDetails = Array.isArray(host.network?.interfaces) &&
-            host.network.interfaces.length > 0;
-
-        if (hasCpuDetails) {
-            const cpuButton = addText(detailButtons, "button", "small-button", "CPU cores");
-            cpuButton.type = "button";
-            cpuButton.addEventListener("click", () => openDetails("cpu", clientId));
-        }
-        if (hasNetworkDetails) {
-            const networkButton = addText(detailButtons, "button", "small-button", "Network adapters");
-            networkButton.type = "button";
-            networkButton.addEventListener("click", () => openDetails("network", clientId));
-        }
-        if (detailButtons.childElementCount > 0) {
-            card.appendChild(detailButtons);
-        }
 
         const footer = document.createElement("div");
         footer.className = "host-footer";
@@ -1531,7 +1803,7 @@
     }
 
     function rerenderNetworkSections() {
-        if (detailsDialog.open && activeDetails?.type === "network") {
+        if (detailsDialog.open && activeDetails) {
             renderDetailsDialog();
         }
     }
@@ -1556,9 +1828,12 @@
         if (activeDetails.type === "cpu") {
             addCpuDetails(detailsDialogContent, host.metrics || {});
             detailsDialogTitle.textContent = detailsDialogContent.dataset.title || "CPU core details";
-        } else {
+        } else if (activeDetails.type === "network") {
             addNetworkSection(detailsDialogContent, host.network, host.client_id);
             detailsDialogTitle.textContent = detailsDialogContent.querySelector(".network-section")?.dataset.title || "Network adapters";
+        } else {
+            addStorageDetails(detailsDialogContent, host);
+            detailsDialogTitle.textContent = `Drive mounts · ${host.storage?.drives?.length || 0}`;
         }
     }
 
@@ -1572,55 +1847,84 @@
         });
     }
 
-    function openInterfaceSettings(clientId) {
+    function openPreferenceSettings(type, clientId) {
         const host = currentHosts.find(item => item.client_id === clientId);
-        const interfaces = Array.isArray(host?.network?.interfaces)
-            ? host.network.interfaces
-            : [];
-
-        if (!host || interfaces.length === 0) {
+        const isNetwork = type === "network";
+        const items = isNetwork
+            ? (Array.isArray(host?.network?.interfaces) ? host.network.interfaces : [])
+            : (Array.isArray(host?.storage?.drives) ? host.storage.drives : []);
+        if (!host || items.length === 0) {
             return;
         }
 
         editingClientId = clientId;
-        const preferences =
-            dashboardConfig.host_interface_preferences?.[clientId] || {};
+        editingPreferenceType = type;
+        const preferences = isNetwork
+            ? dashboardConfig.host_interface_preferences?.[clientId] || {}
+            : dashboardConfig.host_storage_preferences?.[clientId] || {};
+        const ordered = isNetwork
+            ? sortInterfaces(items, preferences.order || [])
+            : sortDrives(items, preferences.order || []);
+        const keyForItem = item => isNetwork ? item.name : item.mountpoint;
+        const defaultVisible = isNetwork
+            ? defaultCardInterfaces(selectInterfaces(items, clientId))
+            : defaultCardDrives(items);
+        const cardVisible = new Set(Array.isArray(preferences.card_visible) ? preferences.card_visible : defaultVisible);
         const hidden = new Set(preferences.hidden || []);
-        const ordered = sortInterfaces(interfaces, preferences.order || []);
 
-        interfaceDialogHost.textContent =
-            `${host.hostname} · ${ordered.length} interfaces`;
+        interfaceDialogTitle.textContent = isNetwork ? "Configure network adapters" : "Configure live drives";
+        interfaceDialogHost.textContent = `${host.hostname} · ${ordered.length} ${isNetwork ? "adapters" : "drives"}`;
+        interfaceDialogDescription.textContent = isNetwork
+            ? "Choose adapters shown on the card, hide adapters from details, and set their priority. Field choices apply to the adapter details view. Preferences are shared across browsers and reset when the server restarts."
+            : "Choose drives to monitor live on the card and set their order. All reported drives remain available from the Drives button. Preferences are shared across browsers and reset when the server restarts.";
         interfaceDialogError.hidden = true;
         interfaceDialogError.textContent = "";
         interfaceConfigList.replaceChildren();
+        interfaceFieldList.replaceChildren();
+        interfaceFieldList.hidden = !isNetwork;
 
-        for (const iface of ordered) {
+        for (const item of ordered) {
             const row = document.createElement("div");
             row.className = "interface-config-row";
-            row.dataset.interfaceName = iface.name || "";
+            const itemName = keyForItem(item) || "";
+            row.dataset.itemName = itemName;
 
-            const label = document.createElement("label");
-            label.className = "interface-config-label";
+            const labels = document.createElement("div");
+            labels.className = "config-row-labels";
+            const description = addText(labels, "span", "", itemName || "Unnamed item");
+            if (isNetwork) {
+                const state = item.is_up === true ? "Up" : item.is_up === false ? "Down" : "State unknown";
+                description.textContent = `${itemName} · ${item.type || "unknown"} · ${state}`;
+            } else {
+                description.textContent = `${itemName} · ${formatBytes(item.used_bytes)} used of ${formatBytes(item.capacity_bytes)}`;
+            }
 
-            const checkbox = document.createElement("input");
-            checkbox.type = "checkbox";
-            checkbox.checked = !hidden.has(iface.name);
-            checkbox.setAttribute(
-                "aria-label",
-                `Show ${iface.name || "unnamed interface"}`
-            );
+            const toggles = document.createElement("div");
+            toggles.className = "config-row-labels";
+            const liveLabel = document.createElement("label");
+            liveLabel.className = "config-toggle";
+            const liveCheckbox = document.createElement("input");
+            liveCheckbox.type = "checkbox";
+            liveCheckbox.checked = cardVisible.has(itemName);
+            liveCheckbox.dataset.cardVisible = "true";
+            liveLabel.append(liveCheckbox, document.createTextNode("Show live on card"));
+            toggles.appendChild(liveLabel);
 
-            const description = document.createElement("span");
-            const state = iface.is_up === true
-                ? "Up"
-                : iface.is_up === false
-                    ? "Down"
-                    : "State unknown";
-            description.textContent =
-                `${iface.name || "Unnamed interface"} · ${iface.type || "unknown"} · ${state}`;
+            if (isNetwork) {
+                const detailLabel = document.createElement("label");
+                detailLabel.className = "config-toggle";
+                const detailCheckbox = document.createElement("input");
+                detailCheckbox.type = "checkbox";
+                detailCheckbox.checked = !hidden.has(itemName);
+                detailCheckbox.dataset.showDetails = "true";
+                detailLabel.append(detailCheckbox, document.createTextNode("Show in details"));
+                toggles.appendChild(detailLabel);
+            }
 
-            label.append(checkbox, description);
-            row.appendChild(label);
+            const rowContent = document.createElement("div");
+            rowContent.className = "config-row-labels";
+            rowContent.append(labels, toggles);
+            row.appendChild(rowContent);
 
             const actions = document.createElement("div");
             actions.className = "interface-config-actions";
@@ -1628,7 +1932,7 @@
             const up = addText(actions, "button", "small-button", "↑");
             up.type = "button";
             up.dataset.move = "up";
-            up.setAttribute("aria-label", `Move ${iface.name} up`);
+            up.setAttribute("aria-label", `Move ${itemName} up`);
             up.addEventListener("click", () => {
                 const previous = row.previousElementSibling;
                 if (previous) {
@@ -1640,7 +1944,7 @@
             const down = addText(actions, "button", "small-button", "↓");
             down.type = "button";
             down.dataset.move = "down";
-            down.setAttribute("aria-label", `Move ${iface.name} down`);
+            down.setAttribute("aria-label", `Move ${itemName} down`);
             down.addEventListener("click", () => {
                 const next = row.nextElementSibling;
                 if (next) {
@@ -1651,6 +1955,23 @@
 
             row.appendChild(actions);
             interfaceConfigList.appendChild(row);
+        }
+
+        if (isNetwork) {
+            const configuredFields = preferences.detail_fields;
+            const selectedFields = new Set(Array.isArray(configuredFields)
+                ? configuredFields
+                : NETWORK_DETAIL_OPTIONS.map(([key]) => key));
+            for (const [key, labelText] of NETWORK_DETAIL_OPTIONS) {
+                const label = document.createElement("label");
+                label.className = "config-toggle interface-field-row";
+                const checkbox = document.createElement("input");
+                checkbox.type = "checkbox";
+                checkbox.checked = selectedFields.has(key);
+                checkbox.dataset.detailField = key;
+                label.append(checkbox, document.createTextNode(labelText));
+                interfaceFieldList.appendChild(label);
+            }
         }
 
         updateInterfaceMoveButtons();
@@ -1665,21 +1986,36 @@
         }
 
         const rows = [...interfaceConfigList.children];
-        const order = rows.map(row => row.dataset.interfaceName);
-        const hidden = rows
-            .filter(row => !row.querySelector('input[type="checkbox"]').checked)
-            .map(row => row.dataset.interfaceName);
+        const order = rows.map(row => row.dataset.itemName);
+        const cardVisible = rows
+            .filter(row => row.querySelector("[data-card-visible]").checked &&
+                (editingPreferenceType !== "network" || row.querySelector("[data-show-details]").checked))
+            .map(row => row.dataset.itemName);
 
         interfaceDialogSave.disabled = true;
         interfaceDialogSave.textContent = "Saving...";
 
         try {
-            await saveConfigPatch({
-                host_interface_preferences: {
-                    [editingClientId]: { hidden, order }
-                }
-            });
+            if (editingPreferenceType === "network") {
+                const hidden = rows
+                    .filter(row => !row.querySelector("[data-show-details]").checked)
+                    .map(row => row.dataset.itemName);
+                const detail_fields = [...interfaceFieldList.querySelectorAll("[data-detail-field]:checked")]
+                    .map(input => input.dataset.detailField);
+                await saveConfigPatch({
+                    host_interface_preferences: {
+                        [editingClientId]: { hidden, order, card_visible: cardVisible, detail_fields }
+                    }
+                });
+            } else {
+                await saveConfigPatch({
+                    host_storage_preferences: {
+                        [editingClientId]: { order, card_visible: cardVisible }
+                    }
+                });
+            }
             interfaceDialog.close();
+            hostGrid.replaceChildren(...currentHosts.map(createHostCard));
             rerenderNetworkSections();
         } catch (error) {
             interfaceDialogError.textContent =
@@ -1739,8 +2075,8 @@
             const config = await response.json();
             dashboardConfig = {
                 ...config,
-                host_interface_preferences:
-                    config.host_interface_preferences || {}
+                host_interface_preferences: config.host_interface_preferences || {},
+                host_storage_preferences: config.host_storage_preferences || {}
             };
 
             const configuredSeconds = Number(
@@ -1809,8 +2145,8 @@
         const config = await response.json();
         dashboardConfig = {
             ...config,
-            host_interface_preferences:
-                config.host_interface_preferences || {}
+            host_interface_preferences: config.host_interface_preferences || {},
+            host_storage_preferences: config.host_storage_preferences || {}
         };
 
         const configuredSeconds = Number(config.dashboard_refresh_seconds);
@@ -1961,8 +2297,7 @@
         lastRefresh.textContent = "Authentication required";
 
         currentHosts = [];
-        dashboardConfig = { host_interface_preferences: {} };
-        document.getElementById("network-view").value = "primary";
+        dashboardConfig = { host_interface_preferences: {}, host_storage_preferences: {} };
     }
 
     loginForm.addEventListener("submit", async event => {
@@ -2001,9 +2336,6 @@
 
     document.getElementById("disconnect-button")
         .addEventListener("click", () => disconnect());
-
-    document.getElementById("network-view")
-        .addEventListener("change", rerenderNetworkSections);
 
     document
         .getElementById("refresh-rate")
