@@ -7,7 +7,7 @@ Network Health Monitoring and Dashboard
 
 ```bash
 cd dapper
-podman build -t dapper .
+podman build -t dapper:0.4.3 .
 ```
 
 ### run
@@ -19,7 +19,19 @@ podman run -d \
   --env-file .env \
   -p 8000:8000 \
   -e HEARTBEAT_TIMEOUT_SECONDS=90 \
-  dapper
+  dapper:0.4.3
+```
+
+### Push
+
+```bash
+# Have your github PAT ready to go, requires write:packages
+# Paste in as the password when prompted
+podman login ghcr.io --username dmonlineuk
+
+podman tag dapper:0.4.3 ghcr.io/dmonlineuk/dapper:0.4.3
+
+podman push ghcr.io/dmonlineuk/dapper:0.4.3
 ```
 
 ## Clients
