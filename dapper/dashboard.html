@@ -47,7 +47,7 @@
         }
 
         .header-inner {
-            max-width: 1600px;
+            max-width: none;
             margin: 0 auto;
             display: flex;
             align-items: center;
@@ -73,9 +73,9 @@
         }
 
         main {
-            max-width: 1600px;
+            max-width: none;
             margin: 0 auto;
-            padding: 28px 32px 48px;
+            padding: 28px clamp(16px, 2vw, 48px) 48px;
         }
 
         .summary {
@@ -125,7 +125,8 @@
         .grid {
             display: grid;
             grid-template-columns:
-                repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+                repeat(auto-fit, minmax(min(100%, 340px), 420px));
+            justify-content: center;
             gap: 18px;
         }
 
@@ -154,6 +155,13 @@
             font-size: 18px;
             font-weight: 750;
             overflow-wrap: anywhere;
+        }
+
+        .hostname-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
         }
 
         .platform {
@@ -292,6 +300,10 @@
         }
 
         .node-panel-heading {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
             margin-bottom: 10px;
             color: var(--muted);
             font-weight: 650;
@@ -380,16 +392,6 @@
             background: var(--red);
         }
 
-        .storage-section-heading {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 10px;
-            color: var(--muted);
-            font-weight: 650;
-        }
-
         @media (max-width: 440px) {
             .cpu-overview {
                 grid-template-columns: minmax(0, 1fr);
@@ -420,7 +422,7 @@
         }
 
         .network-section {
-            padding: 0;
+            padding: 12px;
         }
 
         .network-heading {
@@ -676,6 +678,17 @@
 
         .interface-dialog h2 {
             margin-bottom: 8px;
+        }
+
+        #display-name-input {
+            display: block;
+            width: 100%;
+            margin: 8px 0;
+            padding: 10px;
+            color: var(--text);
+            background: var(--panel-raised);
+            border: 1px solid var(--border);
+            border-radius: 6px;
         }
 
         .interface-config-list {
@@ -949,6 +962,19 @@
             <button id="details-dialog-close" class="small-button" type="button">Close</button>
         </div>
     </dialog>
+
+    <dialog id="display-name-dialog" class="interface-dialog" aria-labelledby="display-name-title">
+        <h2 id="display-name-title">Set display name</h2>
+        <p id="display-name-host" class="muted"></p>
+        <label for="display-name-input">Display name</label>
+        <input id="display-name-input" type="text" maxlength="64" autocomplete="off">
+        <p class="muted">Leave blank to use the hostname reported by the node.</p>
+        <div id="display-name-error" class="message error interface-dialog-error" hidden></div>
+        <div class="interface-dialog-actions">
+            <button id="display-name-cancel" class="small-button" type="button">Cancel</button>
+            <button id="display-name-save" class="small-button" type="button">Save name</button>
+        </div>
+    </dialog>
 </main>
 
 <script>
@@ -997,6 +1023,11 @@
     const detailsDialogTitle = document.getElementById("details-dialog-title");
     const detailsDialogHost = document.getElementById("details-dialog-host");
     const detailsDialogContent = document.getElementById("details-dialog-content");
+    const displayNameDialog = document.getElementById("display-name-dialog");
+    const displayNameHost = document.getElementById("display-name-host");
+    const displayNameInput = document.getElementById("display-name-input");
+    const displayNameError = document.getElementById("display-name-error");
+    const displayNameSave = document.getElementById("display-name-save");
 
     let token = null;
     let timer = null;
@@ -1005,10 +1036,73 @@
     let currentHosts = [];
 
     let refreshSeconds = DEFAULT_REFRESH_SECONDS;
-    let dashboardConfig = { host_interface_preferences: {}, host_storage_preferences: {} };
+    let dashboardConfig = { host_interface_preferences: {}, host_storage_preferences: {}, host_display_names: {} };
     let editingClientId = null;
     let editingPreferenceType = null;
     let activeDetails = null;
+    let editingDisplayNameClientId = null;
+
+    function getDisplayName(host) {
+        return dashboardConfig.host_display_names?.[host.client_id] || host.hostname || "Unknown host";
+    }
+
+    function sortHostsByDisplayName(hosts) {
+        return [...hosts].sort((a, b) =>
+            getDisplayName(a).localeCompare(getDisplayName(b), undefined, {
+                numeric: true,
+                sensitivity: "base"
+            }) || (a.hostname || "").localeCompare(b.hostname || "")
+        );
+    }
+
+    function renderHostCards() {
+        hostGrid.replaceChildren();
+        if (currentHosts.length === 0) {
+            const empty = document.createElement("div");
+            empty.className = "empty";
+            empty.textContent =
+                "No clients discovered yet. Start a Dapper agent " +
+                "on a machine to see its telemetry here.";
+            hostGrid.appendChild(empty);
+            return;
+        }
+
+        sortHostsByDisplayName(currentHosts).forEach(host => {
+            hostGrid.appendChild(createHostCard(host));
+        });
+    }
+
+    function openDisplayNameDialog(clientId) {
+        const host = currentHosts.find(item => item.client_id === clientId);
+        if (!host) return;
+        editingDisplayNameClientId = clientId;
+        displayNameHost.textContent = `Reported hostname: ${host.hostname || "Unknown host"}`;
+        displayNameInput.value = dashboardConfig.host_display_names?.[clientId] || "";
+        displayNameError.hidden = true;
+        displayNameDialog.showModal();
+        displayNameInput.focus();
+    }
+
+    async function saveDisplayName() {
+        if (!editingDisplayNameClientId) return;
+        displayNameSave.disabled = true;
+        displayNameSave.textContent = "Saving...";
+        try {
+            await saveConfigPatch({
+                host_display_names: {
+                    [editingDisplayNameClientId]: displayNameInput.value.trim()
+                }
+            });
+            displayNameDialog.close();
+            renderHostCards();
+        } catch (error) {
+            displayNameError.textContent = `Unable to save display name: ${error.message}`;
+            displayNameError.hidden = false;
+        } finally {
+            displayNameSave.disabled = false;
+            displayNameSave.textContent = "Save name";
+        }
+    }
 
     function formatDuration(seconds) {
         if (!Number.isFinite(seconds) || seconds < 0) {
@@ -1249,7 +1343,7 @@
         section.className = "node-panel storage-section";
 
         const heading = document.createElement("div");
-        heading.className = "storage-section-heading";
+        heading.className = "node-panel-heading";
         addText(heading, "span", "", "Drive mounts");
         const actions = document.createElement("div");
         actions.className = "node-section-actions";
@@ -1259,7 +1353,7 @@
             detailButton.addEventListener("click", () => openDetails("storage", host.client_id));
             const settingsButton = addText(actions, "button", "small-button icon-button", "⚙");
             settingsButton.type = "button";
-            settingsButton.title = `Configure live drives for ${host.hostname}`;
+            settingsButton.title = `Configure live drives for ${getDisplayName(host)}`;
             settingsButton.setAttribute("aria-label", settingsButton.title);
             settingsButton.addEventListener("click", () => openPreferenceSettings("storage", host.client_id));
         }
@@ -1606,7 +1700,7 @@
             detailButton.addEventListener("click", () => openDetails("network", host.client_id));
             const settingsButton = addText(actions, "button", "small-button icon-button", "⚙");
             settingsButton.type = "button";
-            settingsButton.title = `Configure network adapters for ${host.hostname}`;
+            settingsButton.title = `Configure network adapters for ${getDisplayName(host)}`;
             settingsButton.setAttribute("aria-label", settingsButton.title);
             settingsButton.addEventListener("click", () => openPreferenceSettings("network", host.client_id));
         }
@@ -1654,13 +1748,21 @@
         header.className = "host-header";
 
         const identity = document.createElement("div");
+        const nameRow = document.createElement("div");
+        nameRow.className = "hostname-row";
 
         addText(
-            identity,
+            nameRow,
             "div",
             "hostname",
-            host.hostname || "Unknown host"
+            getDisplayName(host)
         );
+        const nameButton = addText(nameRow, "button", "small-button icon-button", "⚙");
+        nameButton.type = "button";
+        nameButton.title = `Set display name for ${host.hostname || "this node"}`;
+        nameButton.setAttribute("aria-label", nameButton.title);
+        nameButton.addEventListener("click", () => openDisplayNameDialog(clientId));
+        identity.appendChild(nameRow);
 
         addText(
             identity,
@@ -1824,7 +1926,7 @@
             return;
         }
 
-        detailsDialogHost.textContent = `${host.hostname} · updated with dashboard refresh`;
+        detailsDialogHost.textContent = `${getDisplayName(host)} · updated with dashboard refresh`;
         if (activeDetails.type === "cpu") {
             addCpuDetails(detailsDialogContent, host.metrics || {});
             detailsDialogTitle.textContent = detailsDialogContent.dataset.title || "CPU core details";
@@ -1873,7 +1975,7 @@
         const hidden = new Set(preferences.hidden || []);
 
         interfaceDialogTitle.textContent = isNetwork ? "Configure network adapters" : "Configure live drives";
-        interfaceDialogHost.textContent = `${host.hostname} · ${ordered.length} ${isNetwork ? "adapters" : "drives"}`;
+        interfaceDialogHost.textContent = `${getDisplayName(host)} · ${ordered.length} ${isNetwork ? "adapters" : "drives"}`;
         interfaceDialogDescription.textContent = isNetwork
             ? "Choose adapters shown on the card, hide adapters from details, and set their priority. Field choices apply to the adapter details view. Preferences are shared across browsers and reset when the server restarts."
             : "Choose drives to monitor live on the card and set their order. All reported drives remain available from the Drives button. Preferences are shared across browsers and reset when the server restarts.";
@@ -2076,7 +2178,8 @@
             dashboardConfig = {
                 ...config,
                 host_interface_preferences: config.host_interface_preferences || {},
-                host_storage_preferences: config.host_storage_preferences || {}
+                host_storage_preferences: config.host_storage_preferences || {},
+                host_display_names: config.host_display_names || {}
             };
 
             const configuredSeconds = Number(
@@ -2146,7 +2249,8 @@
         dashboardConfig = {
             ...config,
             host_interface_preferences: config.host_interface_preferences || {},
-            host_storage_preferences: config.host_storage_preferences || {}
+            host_storage_preferences: config.host_storage_preferences || {},
+            host_display_names: config.host_display_names || {}
         };
 
         const configuredSeconds = Number(config.dashboard_refresh_seconds);
@@ -2239,21 +2343,7 @@
             document.getElementById("offline-count").textContent =
                 hosts.length - online;
 
-            hostGrid.replaceChildren();
-
-            if (hosts.length === 0) {
-                const empty = document.createElement("div");
-                empty.className = "empty";
-                empty.textContent =
-                    "No clients discovered yet. Start a Dapper agent " +
-                    "on a machine to see its telemetry here.";
-
-                hostGrid.appendChild(empty);
-            } else {
-                hosts.forEach(host => {
-                    hostGrid.appendChild(createHostCard(host));
-                });
-            }
+            renderHostCards();
 
             hideMessage();
 
@@ -2297,7 +2387,7 @@
         lastRefresh.textContent = "Authentication required";
 
         currentHosts = [];
-        dashboardConfig = { host_interface_preferences: {}, host_storage_preferences: {} };
+        dashboardConfig = { host_interface_preferences: {}, host_storage_preferences: {}, host_display_names: {} };
     }
 
     loginForm.addEventListener("submit", async event => {
@@ -2378,6 +2468,16 @@
 
     document.getElementById("details-dialog-close")
         .addEventListener("click", () => detailsDialog.close());
+
+    document.getElementById("display-name-cancel")
+        .addEventListener("click", () => displayNameDialog.close());
+    displayNameSave.addEventListener("click", saveDisplayName);
+    displayNameInput.addEventListener("keydown", event => {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            saveDisplayName();
+        }
+    });
 
     interfaceDialogSave.addEventListener("click", saveInterfaceSettings);
 

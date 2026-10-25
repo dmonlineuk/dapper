@@ -52,6 +52,7 @@ hosts_lock = asyncio.Lock()
 dashboard_refresh_seconds = DASHBOARD_REFRESH_SECONDS
 host_interface_preferences: dict[str, dict[str, list[str]]] = {}
 host_storage_preferences: dict[str, dict[str, list[str]]] = {}
+host_display_names: dict[str, str] = {}
 config_lock = asyncio.Lock()
 NETWORK_DETAIL_FIELDS = {
     "link_speed", "ipv4", "ipv6", "mac_address", "mtu", "duplex",
@@ -86,7 +87,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Dapper API",
-    version="0.4.5",
+    version="0.4.6",
     lifespan=lifespan,
 )
 
@@ -141,6 +142,7 @@ class ConfigUpdate(BaseModel):
     dashboard_refresh_seconds: int | None = Field(default=None, ge=1, le=60)
     host_interface_preferences: dict[str, InterfacePreferenceUpdate] | None = None
     host_storage_preferences: dict[str, StoragePreferenceUpdate] | None = None
+    host_display_names: dict[str, str] | None = None
 
 
 def config_snapshot() -> dict[str, Any]:
@@ -157,6 +159,7 @@ def config_snapshot() -> dict[str, Any]:
             client_id: {key: list(values) for key, values in preference.items()}
             for client_id, preference in host_storage_preferences.items()
         },
+        "host_display_names": dict(host_display_names),
     }
 
 
@@ -189,8 +192,22 @@ async def patch_config(update: ConfigUpdate):
     update_data = update.dict(exclude_unset=True)
     preference_updates = update_data.get("host_interface_preferences") or {}
     storage_updates = update_data.get("host_storage_preferences") or {}
+    display_name_updates = update_data.get("host_display_names") or {}
     validated_updates: dict[str, dict[str, list[str] | None]] = {}
     validated_storage: dict[str, dict[str, list[str] | None]] = {}
+    validated_display_names: dict[str, str] = {}
+
+    for supplied_client_id, display_name in display_name_updates.items():
+        try:
+            client_id = str(UUID(supplied_client_id))
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid client ID: {supplied_client_id}") from exc
+        if not isinstance(display_name, str) or len(display_name.strip()) > 64:
+            raise HTTPException(status_code=422, detail="Display names must be at most 64 characters")
+        async with hosts_lock:
+            if client_id not in hosts:
+                raise HTTPException(status_code=404, detail=f"Unknown host: {client_id}")
+        validated_display_names[client_id] = display_name.strip()
 
     for supplied_client_id, preference_update in preference_updates.items():
         try:
@@ -299,6 +316,12 @@ async def patch_config(update: ConfigUpdate):
                 host_storage_preferences.pop(client_id, None)
             else:
                 host_storage_preferences[client_id] = merged
+
+        for client_id, display_name in validated_display_names.items():
+            if display_name:
+                host_display_names[client_id] = display_name
+            else:
+                host_display_names.pop(client_id, None)
 
         return config_snapshot()
 
